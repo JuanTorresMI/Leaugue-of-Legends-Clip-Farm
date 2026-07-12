@@ -26,7 +26,9 @@ def captured_posts(monkeypatch):
         posts.append({"url": url, "data": data or {}, "files": files})
         phase = (data or {}).get("upload_phase")
         if phase == "start":
-            return _FakeResp({"video_id": "VID1", "upload_session_id": "SESS9", "start_offset": "0", "end_offset": "10"})
+            return _FakeResp(
+                {"video_id": "VID1", "upload_session_id": "SESS9", "start_offset": "0", "end_offset": "10"}
+            )
         if phase == "transfer":
             return _FakeResp({"start_offset": "10", "end_offset": "10"})  # done after one chunk
         return _FakeResp({"success": True})

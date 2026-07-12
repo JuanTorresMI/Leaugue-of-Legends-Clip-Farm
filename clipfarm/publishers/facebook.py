@@ -15,7 +15,6 @@ from pathlib import Path
 
 import requests
 
-from clipfarm.config import get_settings
 from clipfarm.publishers import quota
 
 logger = logging.getLogger(__name__)

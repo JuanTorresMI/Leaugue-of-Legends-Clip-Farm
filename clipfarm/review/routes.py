@@ -160,7 +160,6 @@ def retry_platform(media_file_id: int, platform: str) -> dict:
 def get_autopost() -> dict:
     """Auto-post settings + a live status snapshot for the dashboard."""
     from clipfarm import autopost
-    from clipfarm.jobs.scheduler import due_status
 
     return _autopost_payload(autopost.current())
 

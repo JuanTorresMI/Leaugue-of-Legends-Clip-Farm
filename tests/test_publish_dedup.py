@@ -60,7 +60,9 @@ def test_duplicate_content_is_blocked(temp_db, monkeypatch):
     with db.get_conn() as conn:
         mid = _seed_item(conn)
         # Simulate an earlier upload of the same match/kill (e.g. a re-recorded or renamed file).
-        db.record_published_content(conn, "youtube", ["clip:NA1_1:840000"], media_file_id=999, platform_video_id="old-vid")
+        db.record_published_content(
+            conn, "youtube", ["clip:NA1_1:840000"], media_file_id=999, platform_video_id="old-vid"
+        )
 
     publish_job._run(mid)
 

@@ -6,8 +6,6 @@ from functools import lru_cache
 
 from riotwatcher import ApiError, LolWatcher, RiotWatcher
 
-from clipfarm.config import get_settings
-
 logger = logging.getLogger(__name__)
 
 
@@ -75,7 +73,8 @@ class RiotClient:
                 tier = solo["tier"].capitalize()
                 # Apex tiers have no division
                 division = solo.get("rank", "")
-                self._rank = f"{tier} {division}".strip() if tier not in ("Master", "Grandmaster", "Challenger") else tier
+                apex = tier in ("Master", "Grandmaster", "Challenger")
+                self._rank = tier if apex else f"{tier} {division}".strip()
         except RiotKeyExpiredError:
             raise
         except Exception:  # noqa: BLE001 -- rank enriches titles; its failure must not block ingest

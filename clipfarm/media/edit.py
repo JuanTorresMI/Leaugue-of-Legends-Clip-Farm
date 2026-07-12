@@ -66,7 +66,7 @@ def _render_caption_png(text: str, out_path: Path) -> Path | None:
     text = text.upper()
     max_w = int(_VW * 0.9)
     size = 150
-    font: "ImageFont.FreeTypeFont | ImageFont.ImageFont"
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     while size >= 60:
         try:
             font = ImageFont.truetype(str(font_path), size)
@@ -81,7 +81,7 @@ def _render_caption_png(text: str, out_path: Path) -> Path | None:
         size -= 10
 
     bbox = draw.textbbox((0, 0), text, font=font, stroke_width=8)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    tw = bbox[2] - bbox[0]
     x = (_VW - tw) // 2 - bbox[0]
     y = int(_VH * 0.16) - bbox[1]  # upper third, clear of the phone UI at the very top
     draw.text((x, y), text, font=font, fill=(255, 255, 255, 255), stroke_width=8, stroke_fill=(0, 0, 0, 255))

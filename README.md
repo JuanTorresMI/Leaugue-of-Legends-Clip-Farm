@@ -213,6 +213,11 @@ If the font or CDN is unavailable, thumbnail generation degrades gracefully to a
   ```
   python -m clipfarm.cli refresh-drafts
   ```
+- **Back-post YouTube clips to Facebook Reels** (everything already on YouTube but not yet on
+  Facebook; idempotent, respects Meta's 30 Reels/24h cap):
+  ```
+  python -m clipfarm.cli backpost-facebook
+  ```
 - **Switch accounts** — playing on a smurf/alt? Use the dashboard header dropdown (the `+` adds a
   new one), or the CLI. The Riot ID is validated before switching, and each recording is tagged
   with the account it belongs to, so switching never mis-matches a previous account's clips:
@@ -236,14 +241,22 @@ clipfarm/
   riot/         Match-V5 client, filename->match matcher, timeline multi-kill analysis,
                 metadata_builder (titles/descriptions/tags), champion_names
   media/        ffmpeg wrapper, composite thumbnails (Data Dragon art), edit (vertical+music+fades)
-  jobs/         pipeline (ingest->match->metadata->thumbnail), rematch sweep, publish_job
-  publishers/   registry (the plug-in point), youtube, facebook, quota
+  jobs/         pipeline (ingest->match->metadata->thumbnail), rematch sweep, publish_job,
+                scheduler (auto-post), scan (folder re-scan), cleanup (file lifecycle)
+  publishers/   registry (the plug-in point), youtube, facebook, dedup (content ledger), quota
+  metrics/      base (provider registry), youtube_stats, facebook_stats, poller (hourly
+                snapshots), analysis (strong/weak classification + insights + timeline)
   review/       FastAPI app + routes + the dashboard (templates/ + static/)
+  paths.py      Ascent filename/folder conventions      autopost.py  scheduler settings store
   accounts.py   multi-account store   riot_key.py  runtime key   fb_settings.py  FB creds
-  config.py     config.yaml + .env    db.py  SQLite (media_files + publish_targets)
+  config.py     config.yaml + .env    db.py  SQLite schema + all queries
 ```
 Runtime state that shouldn't be in code lives in `data/` (SQLite, tokens, caches, account/
 credential JSON) — all gitignored. `config.yaml` holds tunables; `.env` holds secrets/seeds.
+
+**Deep dives:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (data flow, DB schema, background
+workers, invariants) and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (dev setup, testing,
+step-by-step recipes for extending the app).
 
 ## Extending: add a publishing platform
 

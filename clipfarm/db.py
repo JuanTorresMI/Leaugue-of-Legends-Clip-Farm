@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from clipfarm.config import get_settings
 
@@ -388,7 +389,9 @@ def autopost_last_fired(conn: sqlite3.Connection, platform: str, kind: str = "cl
     return row["t"] if row and row["t"] else None
 
 
-def failed_autopost_targets(conn: sqlite3.Connection, older_than_min: int, younger_than_hours: int) -> list[sqlite3.Row]:
+def failed_autopost_targets(
+    conn: sqlite3.Connection, older_than_min: int, younger_than_hours: int
+) -> list[sqlite3.Row]:
     """Auto-posted targets that failed and are worth backfilling: source still on disk, last try
     between `older_than_min` ago (don't hammer) and `younger_than_hours` ago (give up eventually)."""
     return conn.execute(

@@ -39,7 +39,7 @@ class AutopostSettings:
     full_game_hours: list[int] = field(default_factory=lambda: [15])
     full_game_platforms: list[str] = field(default_factory=lambda: ["youtube"])
 
-    def normalized(self) -> "AutopostSettings":
+    def normalized(self) -> AutopostSettings:
         def _hours(hrs, default):
             return sorted({h for h in hrs if 0 <= int(h) <= 23}) or default
 

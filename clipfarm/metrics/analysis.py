@@ -15,16 +15,15 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from statistics import mean
 
 from clipfarm import db
 
-
 # --- shared helpers -------------------------------------------------------------------------
 
 def _utc_to_local_offset_hours() -> int:
-    utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+    utc_now = datetime.now(UTC).replace(tzinfo=None)
     return round((datetime.now() - utc_now).total_seconds() / 3600)
 
 

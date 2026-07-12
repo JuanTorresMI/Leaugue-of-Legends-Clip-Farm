@@ -21,7 +21,22 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
+    "ruff>=0.8.0",
 ]
 
 [tool.setuptools.packages.find]
 include = ["clipfarm*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [".venv", "data", "music", "assets"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import order, UP modernize, B bugbear, BLE blind-except.
+# Catch-all excepts are intentional in the background loops -- each carries an explanatory
+# `# noqa: BLE001`, so BLE stays enabled to force that justification everywhere.
+select = ["E", "W", "F", "I", "UP", "B", "BLE"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["clipfarm", "scripts"]

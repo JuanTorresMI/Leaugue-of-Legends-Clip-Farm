@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 # Hash a bounded sample so signing a 30-60 min full game is still instant. Two files with the
 # same size and identical head+tail are, for our purposes, the same recording.

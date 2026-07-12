@@ -105,7 +105,9 @@ def _augment_with_analytics(video_ids: list[str], out: dict[str, dict]) -> None:
             if not rows:
                 break
             headers = [h["name"] for h in resp.get("columnHeaders", [])]
-            values = dict(zip(headers, rows[0]))
+            # strict=False: tolerate a header/row mismatch (API contract break) rather than
+            # crash the poll -- missing metrics just stay absent for this video.
+            values = dict(zip(headers, rows[0], strict=False))
             stat = out.setdefault(vid, {})
             for api_name, col in key_map.items():
                 if api_name in values and values[api_name] is not None:

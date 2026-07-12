@@ -7,8 +7,8 @@ avg_view_pct, impressions, ctr) are stored directly; anything else is kept in ex
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 # video_id -> {metric_name: value}
 FetchFn = Callable[[list[str]], dict[str, dict]]

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 # Full games: "07-01-2026-19-09.mp4" (MM-DD-YYYY-HH-MM, minute resolution).
@@ -14,7 +14,7 @@ _FILENAME_RE = re.compile(
 )
 
 
-class MediaKind(str, Enum):
+class MediaKind(StrEnum):
     FULL_GAME = "full_game"
     CLIP = "clip"
 

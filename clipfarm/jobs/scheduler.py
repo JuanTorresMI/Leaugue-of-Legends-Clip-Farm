@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from clipfarm import autopost, db
 
@@ -138,7 +138,7 @@ def run_once(now_local: datetime | None = None) -> int | None:
 
     now_local = now_local or datetime.now()
     # SQLite's datetime('now') writes naive UTC; match that so the gap math lines up.
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_utc = datetime.now(UTC).replace(tzinfo=None)
     primary = settings.platforms[0]
 
     with _TICK_LOCK:
@@ -178,7 +178,7 @@ def run_full_game_once(now_local: datetime | None = None) -> int | None:
         return None
 
     now_local = now_local or datetime.now()
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_utc = datetime.now(UTC).replace(tzinfo=None)
     primary = settings.full_game_platforms[0]
 
     with _TICK_LOCK:
