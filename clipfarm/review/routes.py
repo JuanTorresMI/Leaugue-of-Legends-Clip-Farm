@@ -165,14 +165,15 @@ def get_autopost() -> dict:
 
 
 def _autopost_payload(s) -> dict:
-    from clipfarm.jobs.scheduler import due_status
+    from clipfarm.jobs.scheduler import due_status, enabled_targets
 
     return {
         "enabled": s.enabled,
         "post_hours": s.post_hours,
         "min_kill_streak": s.min_kill_streak,
         "per_game_cap": s.per_game_cap,
-        "platforms": s.platforms,
+        # Where auto-posts actually go: every enabled platform (not a stale hand-kept list).
+        "platforms": enabled_targets("clip"),
         "full_game_enabled": s.full_game_enabled,
         "full_game_hours": s.full_game_hours,
         "status": due_status(s),

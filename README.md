@@ -131,6 +131,12 @@ persists to `data/autopost.json`. Only the current account's clips are considere
 publish-time dedup ledger guarantees it can never double-post. Leave it off to keep the original
 review-and-Approve flow.
 
+**Auto-post publishes to every *enabled* platform.** Targets are derived from which platforms are
+switched on (the publisher registry), not a separate hand-kept list — so enabling Facebook in the
+dashboard immediately means clips post as Reels and full games as Page videos alongside YouTube,
+with no extra setting to flip. Clips already auto-posted before a platform was enabled won't be
+retro-posted by the scheduler; use `python -m clipfarm.cli backpost-facebook` to catch those up.
+
 **Long-form auto-upload:** full games have their own separate track (toggle + hours in the same
 panel), defaulting to one mid-afternoon slot — long-form and Shorts peak at opposite times, and
 1–3 long videos/week outperforms daily. It's off by default.

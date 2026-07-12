@@ -73,6 +73,17 @@ def _current_riot_id() -> str:
     return current_account().riot_id
 
 
+def enabled_targets(kind: str) -> list[str]:
+    """Every platform auto-post should publish this media kind to -- i.e. all *enabled* platforms
+    for it, straight from the publisher registry. Deriving targets from enablement (rather than a
+    separate hand-kept list) is what stops the "I turned Facebook on but nothing posts there" bug:
+    enabling a platform in the dashboard automatically includes it here. YouTube is always first
+    and always enabled, so it stays the bookkeeping anchor for spacing/daily-count."""
+    from clipfarm.publishers import registry
+
+    return registry.enabled_platforms(kind)
+
+
 def _pick_next(conn, settings: autopost.AutopostSettings, account_id: str, primary: str):
     """The single best eligible clip to post next, or None. Best = highest value, then freshest,
     subject to the per-game cap."""
@@ -111,20 +122,24 @@ def due_status(settings: autopost.AutopostSettings | None = None) -> dict:
     """Snapshot for the dashboard: posted-today, daily caps, and next slots for both tracks."""
     settings = settings or autopost.current()
     now_local = datetime.now()
+    clip_targets = enabled_targets("clip") or ["youtube"]
+    fg_targets = enabled_targets("full_game") or ["youtube"]
     with db.get_conn() as conn:
-        clip_posted = db.autopost_count_today(conn, settings.platforms[0], now_local.date().isoformat(), "clip")
+        clip_posted = db.autopost_count_today(conn, clip_targets[0], now_local.date().isoformat(), "clip")
         fg_posted = db.autopost_count_today(
-            conn, settings.full_game_platforms[0], now_local.date().isoformat(), "full_game"
+            conn, fg_targets[0], now_local.date().isoformat(), "full_game"
         )
     return {
         "posted_today": clip_posted,
         "daily_cap": len(settings.post_hours),
         "next_slot_hour": _next_slot_hour(settings.post_hours, now_local),
         "post_hours": settings.post_hours,
+        "platforms": clip_targets,  # where clips actually go (all enabled platforms)
         "full_game": {
             "posted_today": fg_posted,
             "daily_cap": len(settings.full_game_hours),
             "next_slot_hour": _next_slot_hour(settings.full_game_hours, now_local),
+            "platforms": fg_targets,
         },
     }
 
@@ -139,7 +154,10 @@ def run_once(now_local: datetime | None = None) -> int | None:
     now_local = now_local or datetime.now()
     # SQLite's datetime('now') writes naive UTC; match that so the gap math lines up.
     now_utc = datetime.now(UTC).replace(tzinfo=None)
-    primary = settings.platforms[0]
+    targets = enabled_targets("clip")
+    if not targets:
+        return None
+    primary = targets[0]  # YouTube: the always-enabled anchor for spacing/daily-count bookkeeping
 
     with _TICK_LOCK:
         with db.get_conn() as conn:
@@ -158,16 +176,16 @@ def run_once(now_local: datetime | None = None) -> int | None:
 
             media_file_id = pick["id"]
             title = pick["draft_title"]
-            for platform in settings.platforms:
+            for platform in targets:
                 db.ensure_publish_target(conn, media_file_id, platform, selected=True)
             db.update_media_file(conn, media_file_id, status="approved")
             db.record_autopost(conn, media_file_id, primary, "clip")
 
     from clipfarm.jobs.publish_job import submit_publish_job
 
-    for platform in settings.platforms:
+    for platform in targets:
         submit_publish_job(media_file_id, only_platform=platform)
-    logger.info("Auto-post fired: clip id=%s -> %s | %s", media_file_id, settings.platforms, title)
+    logger.info("Auto-post fired: clip id=%s -> %s | %s", media_file_id, targets, title)
     return media_file_id
 
 
@@ -179,7 +197,10 @@ def run_full_game_once(now_local: datetime | None = None) -> int | None:
 
     now_local = now_local or datetime.now()
     now_utc = datetime.now(UTC).replace(tzinfo=None)
-    primary = settings.full_game_platforms[0]
+    targets = enabled_targets("full_game")
+    if not targets:
+        return None
+    primary = targets[0]
 
     with _TICK_LOCK:
         with db.get_conn() as conn:
@@ -198,16 +219,16 @@ def run_full_game_once(now_local: datetime | None = None) -> int | None:
 
             media_file_id = pick["id"]
             title = pick["draft_title"]
-            for platform in settings.full_game_platforms:
+            for platform in targets:
                 db.ensure_publish_target(conn, media_file_id, platform, selected=True)
             db.update_media_file(conn, media_file_id, status="approved")
             db.record_autopost(conn, media_file_id, primary, "full_game")
 
     from clipfarm.jobs.publish_job import submit_publish_job
 
-    for platform in settings.full_game_platforms:
+    for platform in targets:
         submit_publish_job(media_file_id, only_platform=platform)
-    logger.info("Auto-post fired: full game id=%s -> %s | %s", media_file_id, settings.full_game_platforms, title)
+    logger.info("Auto-post fired: full game id=%s -> %s | %s", media_file_id, targets, title)
     return media_file_id
 
 

@@ -35,6 +35,12 @@ def _use_settings(monkeypatch, **overrides):
     base.update(overrides)
     s = AutopostSettings(**base).normalized()
     monkeypatch.setattr(autopost, "current", lambda: s)
+    # Auto-post now targets all *enabled* platforms (from the publisher registry). Tests run with
+    # a minimal settings object, so stub the seam to the platforms the scenario configures.
+    monkeypatch.setattr(
+        scheduler, "enabled_targets",
+        lambda kind: s.full_game_platforms if kind == "full_game" else s.platforms,
+    )
     return s
 
 
