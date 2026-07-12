@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LeagueClipFarm Review Queue</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>LeagueClipFarm</h1>
+    <div class="account">
+      <select id="account-select" title="Active summoner"></select>
+      <button id="account-add" title="Add a new account">+ Account</button>
+      <div id="account-form" class="account-form hidden">
+        <input id="account-riot-id" placeholder="Name#TAG" autocomplete="off" />
+        <select id="account-server" title="Server">
+          <option value="na1">NA</option>
+          <option value="euw1">EUW</option>
+          <option value="eun1">EUNE</option>
+          <option value="kr">KR</option>
+          <option value="br1">BR</option>
+          <option value="la1">LAN</option>
+          <option value="la2">LAS</option>
+          <option value="oc1">OCE</option>
+          <option value="jp1">JP</option>
+          <option value="tr1">TR</option>
+          <option value="ru">RU</option>
+        </select>
+        <button id="account-save">Add &amp; Switch</button>
+        <button id="account-cancel" class="secondary">Cancel</button>
+        <span id="account-error" class="account-error"></span>
+      </div>
+    </div>
+    <div class="account">
+      <button id="key-btn" title="Update the Riot API key (expires every ~24h)">Riot Key</button>
+      <div id="key-form" class="account-form hidden">
+        <input id="key-input" placeholder="RGAPI-..." autocomplete="off" spellcheck="false" />
+        <button id="key-save">Save</button>
+        <button id="key-cancel" class="secondary">Cancel</button>
+        <span id="key-error" class="account-error"></span>
+      </div>
+    </div>
+    <div class="account">
+      <button id="fb-btn" title="Facebook Page posting">Facebook</button>
+      <div id="fb-form" class="account-form hidden">
+        <input id="fb-page-id" placeholder="Page ID" autocomplete="off" spellcheck="false" />
+        <input id="fb-token" placeholder="Page Access Token" autocomplete="off" spellcheck="false" />
+        <label class="fb-enable"><input type="checkbox" id="fb-enabled" /> Enabled</label>
+        <button id="fb-save">Save</button>
+        <button id="fb-cancel" class="secondary">Cancel</button>
+        <span id="fb-error" class="account-error"></span>
+      </div>
+    </div>
+    <div class="account">
+      <button id="autopost-btn" title="Automatically drip-post your best clips on a schedule">Auto-post: …</button>
+      <div id="autopost-form" class="account-form hidden">
+        <label class="fb-enable"><input type="checkbox" id="autopost-enabled" /> Enable auto-posting</label>
+        <label title="Local hours to post at (comma-separated, 0-23). One post per slot = your daily cap.">
+          Post hours <input id="autopost-hours" placeholder="12, 17, 21" autocomplete="off" spellcheck="false" />
+        </label>
+        <label title="Skip clips weaker than this. 1 = allow solo kills; 2 = doubles and up only.">
+          Min kill streak <input id="autopost-min-streak" type="number" min="1" max="5" />
+        </label>
+        <label title="Never auto-post more than this many clips from one game.">
+          Per-game cap <input id="autopost-cap" type="number" min="1" max="10" />
+        </label>
+        <hr class="form-sep" />
+        <label class="fb-enable"><input type="checkbox" id="autopost-fg-enabled" /> Auto-upload full games (long-form)</label>
+        <label title="Local hours to upload full games (comma-separated). Separate from Shorts.">
+          Full-game hours <input id="autopost-fg-hours" placeholder="15" autocomplete="off" spellcheck="false" />
+        </label>
+        <button id="autopost-save">Save</button>
+        <button id="autopost-cancel" class="secondary">Cancel</button>
+        <span id="autopost-status" class="autopost-status"></span>
+      </div>
+    </div>
+    <a class="navlink" href="/metrics" title="Performance metrics dashboard">📊 Metrics</a>
+    <div id="riot-banner" class="banner hidden"></div>
+    <button id="rematch" class="rematch hidden"></button>
+    <div id="quota" class="quota"></div>
+  </header>
+  <main id="queue"></main>
+  <template id="card-template">
+    <article class="card">
+      <video controls preload="none"></video>
+      <img class="thumb" />
+      <div class="fields">
+        <input class="title" title="Title" />
+        <textarea class="description" title="Description"></textarea>
+        <input class="hashtags" title="Hashtags (shown in description)" placeholder="#hashtags" />
+        <input class="tags" title="YouTube search tags (comma-separated, not publicly visible)" placeholder="search tags, comma separated" />
+        <div class="meta"></div>
+        <div class="dupe-warning" hidden></div>
+        <div class="platforms"></div>
+        <div class="target-status"></div>
+        <div class="actions">
+          <button class="regen">Regenerate Thumbnail</button>
+          <button class="approve">Approve</button>
+        </div>
+        <div class="status"></div>
+      </div>
+    </article>
+  </template>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

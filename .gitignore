@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+data/
+!data/.gitkeep
+*.sqlite3
+client_secret*.json
+youtube_token.json
+tiktok_token.json
+riot_key.txt
+music/*
+!music/README.md

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LeagueClipFarm Metrics</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>📊 Performance</h1>
+    <a class="navlink" href="/">&larr; Review queue</a>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="youtube">YouTube</button>
+      <button class="tab" data-tab="facebook">Facebook</button>
+    </div>
+    <div class="header-right">
+      <span id="refresh-note" class="autopost-status"></span>
+      <button id="refresh-btn" title="Fetch the latest stats from YouTube + Facebook now">↻ Refresh</button>
+    </div>
+  </header>
+
+  <main class="metrics">
+    <!-- ===================== OVERVIEW ===================== -->
+    <section class="tab-panel active" data-panel="overview">
+      <div id="ov-cards" class="stat-row"></div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Channel growth <span class="muted">(cumulative views over time)</span></h2>
+          <div id="growth-legend" class="legend"></div>
+        </div>
+        <div id="growth-chart"></div>
+        <p class="muted tiny">This line only gets more useful — every hourly poll adds a point, so it
+          builds a real long-term trajectory as the weeks go by.</p>
+      </section>
+
+      <div class="two-col">
+        <section class="panel">
+          <h2>What's working <span class="muted">(strongest champions by avg views)</span></h2>
+          <div id="champ-bars"></div>
+        </section>
+        <section class="panel">
+          <h2>Content type <span class="muted">(clips vs full games)</span></h2>
+          <div id="kind-bars"></div>
+          <h3 class="sub">Performance mix</h3>
+          <div id="tier-bar"></div>
+        </section>
+      </div>
+
+      <div class="two-col">
+        <section class="panel">
+          <h2>🔥 Retention leaders <span class="muted">(hold viewers = feed loves it)</span></h2>
+          <div id="retention-leaders" class="lead-list"></div>
+        </section>
+        <section class="panel">
+          <h2>⭐ Subscriber magnets <span class="muted">(clips that convert followers)</span></h2>
+          <div id="conversion-leaders" class="lead-list"></div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Best time to post <span class="muted">(avg views per local upload hour)</span></h2>
+          <button id="apply-hours" class="apply-hours" hidden>Apply to auto-post</button>
+        </div>
+        <div id="besttime"></div>
+        <span id="apply-note" class="autopost-status"></span>
+      </section>
+    </section>
+
+    <!-- ===================== YOUTUBE ===================== -->
+    <section class="tab-panel" data-panel="youtube">
+      <div id="yt-cards" class="stat-row"></div>
+      <section class="panel">
+        <h2>YouTube videos <span class="muted">(click a column to sort)</span></h2>
+        <div class="table-scroll">
+          <table class="vtable" data-platform="youtube">
+            <thead>
+              <tr>
+                <th data-sort="title">Title</th>
+                <th data-sort="tier">Tier</th>
+                <th data-sort="kind">Kind</th>
+                <th class="num" data-sort="views">Views</th>
+                <th class="num" data-sort="avg_view_pct">Retention</th>
+                <th class="num" data-sort="watch_time_minutes">Watch (min)</th>
+                <th class="num" data-sort="likes">Likes</th>
+                <th class="num" data-sort="comments">Comments</th>
+                <th class="num" data-sort="subscribers_gained">Subs</th>
+                <th data-sort="published_at">Published</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty muted" hidden>No YouTube stats yet.</p>
+      </section>
+    </section>
+
+    <!-- ===================== FACEBOOK ===================== -->
+    <section class="tab-panel" data-panel="facebook">
+      <div id="fb-cards" class="stat-row"></div>
+      <section class="panel">
+        <h2>Facebook videos <span class="muted">(click a column to sort)</span></h2>
+        <div class="table-scroll">
+          <table class="vtable" data-platform="facebook">
+            <thead>
+              <tr>
+                <th data-sort="title">Title</th>
+                <th data-sort="tier">Tier</th>
+                <th data-sort="kind">Kind</th>
+                <th class="num" data-sort="views">Views</th>
+                <th class="num" data-sort="reel_plays">Plays</th>
+                <th class="num" data-sort="avg_view_pct">Retention</th>
+                <th class="num" data-sort="watch_time_minutes">Watch (min)</th>
+                <th class="num" data-sort="likes">Likes</th>
+                <th class="num" data-sort="comments">Comments</th>
+                <th data-sort="published_at">Published</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty muted" hidden>No Facebook stats yet.</p>
+      </section>
+    </section>
+  </main>
+  <script src="/static/metrics.js"></script>
+</body>
+</html>

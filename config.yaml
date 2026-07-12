@@ -1,0 +1,75 @@
+# User-editable settings. Secrets live in .env instead.
+
+ascent:
+  full_games_dir: "~/Videos/Ascent"
+  clips_dir: "~/Videos/Ascent/Clips"
+  ffmpeg_path: "C:/Program Files/Ascent/ffmpeg.exe"
+
+watcher:
+  settle_check_interval_seconds: 3
+  settle_required_stable_checks: 3
+
+riot:
+  full_game_match_tolerance_minutes: 15
+  # Riot's startTime/endTime filter on the match history endpoint filters by each match's
+  # END timestamp, not its start (confirmed by testing -- not clearly documented by Riot).
+  # This has to cover the longest realistic game length or long games are missed entirely.
+  full_game_max_duration_minutes: 60
+  # Ascent clip filenames are unlikely to be exactly the kill moment; this is the
+  # window (seconds) searched around a clip's computed offset-into-game for
+  # CHAMPION_KILL events. Unknown until real clips exist -- tune empirically.
+  clip_roll_tolerance_seconds: 20
+  # Kills within this many seconds of each other count as one multi-kill streak.
+  multikill_cluster_seconds: 10
+  # Ascent saves clips mid-game, but Riot's API only has finished games. Unmatched items
+  # younger than this stay 'awaiting match' and are auto-retried every rematch_interval_seconds
+  # while the dashboard is running; older ones give up and keep generic metadata.
+  rematch_give_up_hours: 48
+  rematch_interval_seconds: 180
+
+thumbnails:
+  clip_frame_offset_seconds: 1.5
+  full_game_frame_offset_seconds: 60
+  # Composite thumbnails = gameplay frame + official champion art (Data Dragon) + bold text.
+  # Set false to fall back to a plain frame-grab with a text overlay.
+  composite_enabled: true
+
+editing:
+  # Clips get: 9:16 vertical + background music + loudness normalization + fade in/out,
+  # all in one encode. Full games upload as-is. Set enabled: false to upload clips raw.
+  enabled: true
+  # Drop your own royalty-free tracks here (e.g. from YouTube's Audio Library). A random one
+  # is picked per clip. Empty folder = no music, but normalization/fades still apply.
+  music_dir: "./music"
+  # Music level under the game audio (0.0-1.0). Game audio stays full; music sits beneath.
+  clip_music_volume: 0.18
+  normalize_audio: true
+  fade_in_seconds: 0.4
+  fade_out_seconds: 0.6
+  # Burn a big hook caption ("PENTAKILL!", champion name, ...) over the first few seconds of
+  # each Short -- the biggest retention lever on the Shorts feed. Set hook_caption: false to
+  # upload without it.
+  hook_caption: true
+  hook_seconds: 2.5
+
+youtube:
+  default_full_game_visibility: public
+  default_clip_visibility: public
+  # videos.insert has its own dedicated 100/day quota bucket (as of a June 2026 Google
+  # change), separate from the shared 10,000-unit pool -- this tracks our own usage so we
+  # can stop early with a clear message instead of surfacing a raw 403 from Google.
+  daily_upload_quota: 100
+
+facebook:
+  enabled: false
+
+tiktok:
+  enabled: false
+  force_self_only: true
+
+database:
+  path: "./data/clipfarm.sqlite3"
+
+logging:
+  path: "./data/logs/clipfarm.log"
+  level: "INFO"

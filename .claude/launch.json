@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "clipfarm-dashboard",
+      "runtimeExecutable": "~/Downloads\\LeagueClipFarm\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "clipfarm.cli", "watch"],
+      "port": 8000
+    }
+  ]
+}

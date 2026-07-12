@@ -1,0 +1,69 @@
+{
+  "metadata": {
+    "matchId": "NA1_5000000000"
+  },
+  "info": {
+    "gameStartTimestamp": 1751500000000,
+    "gameEndTimestamp": 1751502100000,
+    "gameDuration": 2100,
+    "queueId": 420,
+    "gameVersion": "26.13.685.9138",
+    "participants": [
+      {
+        "puuid": "test-puuid-1234",
+        "participantId": 3,
+        "championName": "Yasuo",
+        "kills": 12,
+        "deaths": 4,
+        "assists": 6,
+        "win": true,
+        "teamId": 100,
+        "teamPosition": "MIDDLE"
+      },
+      {
+        "puuid": "other-puuid-0001",
+        "participantId": 7,
+        "championName": "Malphite",
+        "kills": 1,
+        "deaths": 8,
+        "assists": 3,
+        "win": false,
+        "teamId": 200,
+        "teamPosition": "TOP"
+      },
+      {
+        "puuid": "other-puuid-0002",
+        "participantId": 8,
+        "championName": "Ashe",
+        "kills": 2,
+        "deaths": 6,
+        "assists": 4,
+        "win": false,
+        "teamId": 200,
+        "teamPosition": "BOTTOM"
+      },
+      {
+        "puuid": "other-puuid-0003",
+        "participantId": 9,
+        "championName": "Leona",
+        "kills": 0,
+        "deaths": 7,
+        "assists": 9,
+        "win": false,
+        "teamId": 200,
+        "teamPosition": "UTILITY"
+      },
+      {
+        "puuid": "other-puuid-0004",
+        "participantId": 10,
+        "championName": "Zed",
+        "kills": 3,
+        "deaths": 5,
+        "assists": 2,
+        "win": false,
+        "teamId": 200,
+        "teamPosition": "MIDDLE"
+      }
+    ]
+  }
+}

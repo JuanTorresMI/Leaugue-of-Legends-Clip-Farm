@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "matchId": "NA1_5000000000"
+  },
+  "info": {
+    "frames": [
+      {
+        "events": [
+          {"type": "CHAMPION_KILL", "timestamp": 600000, "killerId": 3, "victimId": 7},
+          {"type": "CHAMPION_KILL", "timestamp": 604000, "killerId": 3, "victimId": 8},
+          {"type": "CHAMPION_KILL", "timestamp": 609000, "killerId": 3, "victimId": 9}
+        ]
+      },
+      {
+        "events": [
+          {"type": "CHAMPION_KILL", "timestamp": 1200000, "killerId": 7, "victimId": 3},
+          {"type": "CHAMPION_KILL", "timestamp": 1500000, "killerId": 3, "victimId": 10}
+        ]
+      }
+    ]
+  }
+}
