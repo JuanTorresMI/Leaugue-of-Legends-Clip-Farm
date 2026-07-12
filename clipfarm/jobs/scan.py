@@ -1,8 +1,13 @@
-"""Scan the Ascent folders for recordings not yet in the queue, then re-match.
+"""Scan the Ascent folders for recordings not yet in the queue, then re-match and claim.
 
 Runs automatically right after an account switch (new account's clips get ingested + tagged with
-that account) and can be triggered manually from the dashboard. Idempotent: process_new_file
-skips paths already ingested, so re-scanning is cheap.
+that account) and can be triggered manually from the dashboard. Three steps:
+  1. ingest any on-disk files not in the DB (idempotent: process_new_file skips known paths);
+  2. re-match current-account items still awaiting a finished game (rematch_pending);
+  3. claim items that belong to the now-active account but were processed under a different one
+     (claim_for_current_account) -- this is what heals recordings that were ingested while the
+     wrong account was selected, so their Riot match / thumbnail never resolved.
+Idempotent and cheap to re-run.
 """
 from __future__ import annotations
 
@@ -34,13 +39,17 @@ def scan_recordings() -> int:
 
 
 def scan_now() -> dict:
-    """Full scan + a re-match sweep, serialized so overlapping triggers can't interleave."""
-    from clipfarm.jobs.rematch import rematch_pending
+    """Full scan + a re-match sweep + a claim sweep, serialized so overlapping triggers can't
+    interleave. The claim sweep runs last (after re-match, so freshly-matched current-account
+    full games are available as candidates) and adopts recordings that belong to the now-active
+    account but were processed under a different one -- the account-switch case."""
+    from clipfarm.jobs.rematch import claim_for_current_account, rematch_pending
 
     with _SCAN_LOCK:
         added = scan_recordings()
         rematch_pending()
-        return {"added": added}
+        claim = claim_for_current_account()
+        return {"added": added, "claimed": claim.get("claimed", 0)}
 
 
 def start_scan_async() -> threading.Thread:

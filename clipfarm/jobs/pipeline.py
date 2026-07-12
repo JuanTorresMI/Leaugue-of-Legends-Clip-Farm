@@ -130,16 +130,23 @@ def _derive_fields(path: Path, parsed, client) -> dict:
         else:  # CLIP
             with db.get_conn() as conn:
                 candidate_rows = db.list_matched_full_games(conn)
+            # match_id -> the account that owns that full game, so a matched clip is attributed
+            # to whoever actually PLAYED its game rather than merely whichever account is active
+            # now. This is what lets an account switch correctly claim a mis-tagged clip.
+            owner_by_match = {r["riot_match_id"]: r["account"] for r in candidate_rows}
             candidates = [_row_to_match_context(row) for row in candidate_rows]
             matched_game = find_match_containing_timestamp(
                 candidates, parsed.recorded_at, settings.riot.clip_roll_tolerance_seconds
             )
             if matched_game is None:
                 # No processed full game covers this moment (clip may predate its full-game
-                # row, or the game wasn't recorded) -- query Match-V5 directly by time.
+                # row, or the game wasn't recorded) -- query Match-V5 directly by time. A direct
+                # hit came from the current account's own history, so it owns the clip.
                 matched_game = find_match_covering_time(
                     client, parsed.recorded_at, settings.riot.full_game_max_duration_minutes
                 )
+                if matched_game is not None:
+                    owner_by_match[matched_game.match_id] = client.riot_id
 
             highlight = None
             if matched_game:
@@ -159,6 +166,9 @@ def _derive_fields(path: Path, parsed, client) -> dict:
                     role=matched_game.role,
                     patch=matched_game.patch,
                 )
+                owner = owner_by_match.get(matched_game.match_id)
+                if owner:  # attribute to the game's true owner (else keep the current account)
+                    fields["account"] = owner
 
             metadata = build_clip_metadata(matched_game, highlight, parsed.recorded_at, rank)
 
@@ -235,25 +245,57 @@ def process_new_file(path: Path) -> int | None:
     return media_file_id
 
 
-def reprocess(media_file_id: int) -> bool:
-    """Re-run derivation for an existing row *in place* (same id, preserving the user's
-    platform selections). Returns True if it ended up matched. Used by the rematch sweep
-    and the on-demand Regenerate button so freshly-finished games get picked up."""
+def _load_for_reprocess(media_file_id: int):
+    """(path, parsed) for an existing row, or (None, None) if the row/file is gone."""
     settings = get_settings()
     with db.get_conn() as conn:
         row = db.get_media_file(conn, media_file_id)
     if row is None:
-        return False
-
+        return None, None
     path = Path(row["path"])
     if not path.exists():
-        return False
+        return None, None
     parsed = classify_media(path, settings.ascent.full_games_dir, settings.ascent.clips_dir)
-    fields = _derive_fields(path, parsed, get_riot_client())
+    return path, parsed
 
-    # Clear stale match columns not set by this run, so an item that no longer matches
-    # doesn't retain old champion/KDA.
+
+def _commit_reprocess(media_file_id: int, fields: dict) -> None:
+    """Write derived fields, clearing stale match columns not set by this run so an item that
+    no longer matches doesn't retain old champion/KDA."""
     reset = {col: None for col in _MATCH_FIELDS if col not in fields}
     with db.get_conn() as conn:
         db.update_media_file(conn, media_file_id, **reset, **fields)
+
+
+def reprocess(media_file_id: int) -> bool:
+    """Re-run derivation for an existing row *in place* (same id, preserving the user's
+    platform selections). Returns True if it ended up matched. Used by the rematch sweep
+    and the on-demand Regenerate button so freshly-finished games get picked up."""
+    path, parsed = _load_for_reprocess(media_file_id)
+    if path is None:
+        return False
+    fields = _derive_fields(path, parsed, get_riot_client())
+    _commit_reprocess(media_file_id, fields)
     return bool(fields.get("riot_match_id"))
+
+
+def claim_reprocess(media_file_id: int) -> str:
+    """Attempt to match a row against the CURRENT account, but persist ONLY when it actually
+    matches -- so an account switch can *adopt* clips that belong to the now-current account
+    without overwriting/stealing clips that belong to another account on a miss.
+
+    Returns 'matched' (persisted), 'no_match' (clean miss, left untouched -- safe to mark as
+    tried), 'error' (Riot/API problem, left untouched -- retry later), or 'gone' (row/file
+    missing). See clipfarm/jobs/rematch.claim_for_current_account for the caller."""
+    path, parsed = _load_for_reprocess(media_file_id)
+    if path is None:
+        return "gone"
+    fields = _derive_fields(path, parsed, get_riot_client())
+    if fields.get("riot_match_id"):
+        _commit_reprocess(media_file_id, fields)
+        return "matched"
+    # No match: distinguish a real miss (safe to remember) from a transient API failure so we
+    # don't permanently mark a row that only failed because the key was down or Riot 5xx'd.
+    if fields.get("status") in ("failed", "needs_attention"):
+        return "error"
+    return "no_match"

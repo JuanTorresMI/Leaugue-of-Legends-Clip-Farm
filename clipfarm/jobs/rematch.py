@@ -85,6 +85,49 @@ def rematch_pending() -> dict:
         return {"attempted": attempted, "matched": matched}
 
 
+def claim_for_current_account() -> dict:
+    """Adopt not-yet-matched recordings that belong to the now-current account but were
+    processed while a DIFFERENT account was active (so they're mis-tagged and the normal sweep,
+    which is scoped to the current account, skips them), or that previously gave up matching.
+
+    Each candidate is re-matched against the current account but persisted ONLY if it actually
+    matches (see pipeline.claim_reprocess) -- so switching to account B never steals account A's
+    clips on a miss. Full games are attempted first, so a freshly-claimed full game becomes a
+    candidate its own clips can then match against for free. A per-row/per-account marker stops
+    repeated switches from re-querying the Riot API for the same misses.
+
+    Runs on an account switch and on a manual scan (see clipfarm/jobs/scan.py).
+    """
+    from clipfarm.jobs.pipeline import claim_reprocess
+
+    current = _current_riot_id()
+    with _SWEEP_LOCK:
+        with db.get_conn() as conn:
+            rows = db.claimable_media_files(conn, current)
+        if not rows:
+            return {"attempted": 0, "claimed": 0}
+
+        # A dead key would make every attempt look like a miss and wrongly mark rows tried.
+        if not get_riot_client().check_key():
+            logger.warning("Claim sweep skipped: Riot API key is expired/invalid.")
+            return {"attempted": 0, "claimed": 0, "key_expired": True}
+
+        attempted = claimed = 0
+        for row in rows:
+            attempted += 1
+            result = claim_reprocess(row["id"])
+            if result == "matched":
+                claimed += 1
+            elif result == "no_match":
+                # Remember the miss so we don't re-query Riot for this row/account next time.
+                with db.get_conn() as conn:
+                    db.mark_claim_checked(conn, row["id"], current)
+            # 'error'/'gone': leave unmarked so a later scan retries once things recover.
+
+        logger.info("Claim sweep for %s: %d attempted, %d newly claimed", current, attempted, claimed)
+        return {"attempted": attempted, "claimed": claimed}
+
+
 def start_background_sweep(interval_seconds: int) -> threading.Thread:
     """Daemon thread: run the sweep on a timer. Cheap when nothing is pending."""
 

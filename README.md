@@ -89,9 +89,18 @@ keeps its own footprint small **without losing anything needed for analysis**:
 
 ## Auto-scan on account switch
 
-Switching accounts in the dashboard now kicks off a background scan of the Ascent folders +
+Switching accounts in the dashboard kicks off a background scan of the Ascent folders +
 re-match, so a new account's clips get ingested and tagged automatically. There's also a manual
 `POST /api/scan`.
+
+**Self-healing for wrong-account recordings.** If a game or clip was recorded while the *wrong*
+account was selected, it gets tagged to that account and its Riot match never resolves (that
+account never played the game), leaving it with generic metadata and a plain thumbnail.
+Switching to the correct account now runs a **claim pass** that re-attempts those stranded
+recordings against the now-active account and **adopts the ones that actually match** — re-tagging
+them to the account that truly owns the game and filling in the real title/thumbnail. It only
+persists a recording on a genuine match, so it never steals another account's clips, and a
+per-recording marker means repeated switches don't re-hit the Riot API for the same misses.
 
 ## Auto-post scheduler (drip, don't dump)
 

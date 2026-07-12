@@ -133,6 +133,7 @@ _MIGRATION_COLUMNS = [
     ("media_files", "source_deleted_at", "TEXT"),  # set when the on-disk recording is gone (Ascent rollover)
     ("media_files", "published_at", "TEXT"),        # first successful publish time (best-time analysis)
     ("media_files", "title_variant", "TEXT"),       # which A/B title style the draft used (CTR experiment)
+    ("media_files", "claim_checked_account", "TEXT"),  # last account we tried to claim this row for (see claim sweep)
     ("autopost_log", "kind", "TEXT DEFAULT 'clip'"),  # separate clip vs full-game cadence tracks
 ]
 
@@ -200,6 +201,41 @@ def list_matched_full_games(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM media_files WHERE kind = 'full_game' AND riot_match_id IS NOT NULL"
     ).fetchall()
+
+
+def claimable_media_files(conn: sqlite3.Connection, current_account: str) -> list[sqlite3.Row]:
+    """Rows that may actually belong to the now-current account but were processed under a
+    different one (mis-tagged), or that previously gave up matching -- candidates for the claim
+    sweep that runs on an account switch. A row qualifies when it has no Riot match yet, isn't
+    already going out the door, and is either tagged to a DIFFERENT account or in terminal
+    'unmatched'. Rows we've already tried to claim for this exact account are excluded (the
+    claim marker), so repeated switches don't re-query the Riot API for the same misses. Full
+    games first, so a freshly-claimed full game becomes a candidate its clips can match against
+    for free on the same pass."""
+    return conn.execute(
+        """
+        SELECT id, kind FROM media_files
+        WHERE riot_match_id IS NULL
+          AND status NOT IN ('published', 'uploading', 'approved', 'failed')
+          AND ((account IS NOT NULL AND account != ?) OR status = 'unmatched')
+          AND (claim_checked_account IS NULL OR claim_checked_account != ?)
+          AND id NOT IN (
+              SELECT media_file_id FROM publish_targets WHERE status IN ('published', 'uploading')
+          )
+        ORDER BY CASE kind WHEN 'full_game' THEN 0 ELSE 1 END, recorded_at
+        """,
+        (current_account, current_account),
+    ).fetchall()
+
+
+def mark_claim_checked(conn: sqlite3.Connection, media_file_id: int, account: str) -> None:
+    """Record that we tried to claim this row for `account` and it didn't match, so the claim
+    sweep won't re-hit the Riot API for the same miss on every scan. A real match clears this
+    implicitly -- the row then has a riot_match_id and is no longer claimable."""
+    conn.execute(
+        "UPDATE media_files SET claim_checked_account = ?, updated_at = datetime('now') WHERE id = ?",
+        (account, media_file_id),
+    )
 
 
 def upsert_publish_target(conn: sqlite3.Connection, media_file_id: int, platform: str, selected: bool) -> None:

@@ -140,6 +140,12 @@ few seconds; `metrics.js` loads `/api/metrics` and re-renders — follow the exi
   `Path.resolve()` results (see `paths.classify_media`).
 - **`media_files` rows are never deleted** — archiving sets `source_deleted_at`. Queries that
   should exclude archived items must filter on it (see `db.list_queue`).
+- **The `account` tag is "who was active at processing time," not the true owner.** A recording
+  made while the wrong account was selected is mis-tagged and won't match. The claim sweep
+  (`rematch.claim_for_current_account`, run on account switch / manual scan) re-attempts such
+  rows against the current account and persists **only on a match** (`pipeline.claim_reprocess`),
+  re-deriving `account` from the matched game. Never make a bulk operation blindly re-tag rows to
+  the active account — that steals other accounts' clips.
 - **Dashboard JS caching**: served with `no-store` on purpose; if you remove that middleware,
   stale JS makes new buttons silently dead.
 

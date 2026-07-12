@@ -86,7 +86,7 @@ metrics/analysis.py          strong/weak classification, per-platform summary, i
 | `clipfarm/watcher/` | watchdog observer + settle-detection ingest (a recording is ingested only once it stops growing) |
 | `clipfarm/riot/` | Match-V5 client (riotwatcher), filename→match matcher, timeline kill-cluster analysis, metadata builder, champion name mapping |
 | `clipfarm/media/` | ffmpeg wrapper, frame grabs, composite thumbnails (Data Dragon art + Anton font), clip editing (vertical/music/caption/fades in one encode) |
-| `clipfarm/jobs/` | `pipeline` (ingest→enrich), `rematch` (retry unmatched), `publish_job` (dedup-guarded upload), `scheduler` (auto-post cadence), `scan` (manual/auto folder rescan), `cleanup` (file lifecycle), `models` (shared dataclasses) |
+| `clipfarm/jobs/` | `pipeline` (ingest→enrich, incl. the claim-reprocess used on account switch), `rematch` (retry unmatched + claim mis-tagged/other-account recordings), `publish_job` (dedup-guarded upload), `scheduler` (auto-post cadence), `scan` (manual/auto folder rescan → rematch → claim), `cleanup` (file lifecycle), `models` (shared dataclasses) |
 | `clipfarm/publishers/` | `registry` (platform plug-in point), `youtube`, `facebook`, `dedup` (content signatures), `quota` (self-tracked daily upload quota) |
 | `clipfarm/metrics/` | `base` (provider plug-in point), `youtube_stats`, `facebook_stats`, `poller` (hourly snapshots), `analysis` (classification/insights/timeline + 24h velocity and title-A/B scoring from the time-series) |
 | `clipfarm/review/` | FastAPI app (`app.py` also starts all background workers), `routes.py` (every endpoint), vanilla-JS dashboard (`templates/` + `static/`, no build step) |
@@ -151,7 +151,11 @@ Hard-won knowledge; ignoring these costs hours.
 - **Riot:** dev API keys expire ~every 24h (`check-riot-key`, or the dashboard banner + hot-swap).
   The Match-V5 history `startTime/endTime` filter matches on a game's **end** timestamp, not its
   start — `full_game_max_duration_minutes` exists to compensate. Mid-game clips can't match until
-  the game finishes → the rematch sweep.
+  the game finishes → the rematch sweep. A recording's `account` tag reflects *whoever was active
+  when it was processed*, which can be the wrong account; the true owner is whichever account's
+  match history contains a game at that timestamp, so the claim sweep re-derives `account` from
+  the matched game rather than trusting the tag. riotwatcher's default `BasicRateLimiter` handles
+  429s transparently, so the ~N-call claim sweep throttles instead of erroring.
 - **YouTube:** `videos.insert` has a dedicated **100 uploads/day** bucket (tracked ourselves in
   `quota_usage` to fail with a clear message instead of a raw 403). The on-demand Analytics API
   (`reports.query`) does **not** expose `impressions`/`impressionClickThroughRate` ("Unknown
