@@ -102,6 +102,11 @@ them to the account that truly owns the game and filling in the real title/thumb
 persists a recording on a genuine match, so it never steals another account's clips, and a
 per-recording marker means repeated switches don't re-hit the Riot API for the same misses.
 
+A separate, Riot-API-free **attribution repair** runs on every scan: a clip carries the account
+**and rank** of the game it matched, not whichever account was active when it was processed — so
+a Platinum game's clip can never stay stamped with another account's Emerald rank. (A matched full
+game is reliably owned by the account that played it, which makes this safe to apply in bulk.)
+
 ## Auto-post scheduler (drip, don't dump)
 
 Toggle **Auto-post** in the dashboard header to have the app publish your best clips on a

@@ -140,12 +140,16 @@ few seconds; `metrics.js` loads `/api/metrics` and re-renders — follow the exi
   `Path.resolve()` results (see `paths.classify_media`).
 - **`media_files` rows are never deleted** — archiving sets `source_deleted_at`. Queries that
   should exclude archived items must filter on it (see `db.list_queue`).
-- **The `account` tag is "who was active at processing time," not the true owner.** A recording
-  made while the wrong account was selected is mis-tagged and won't match. The claim sweep
-  (`rematch.claim_for_current_account`, run on account switch / manual scan) re-attempts such
-  rows against the current account and persists **only on a match** (`pipeline.claim_reprocess`),
-  re-deriving `account` from the matched game. Never make a bulk operation blindly re-tag rows to
-  the active account — that steals other accounts' clips.
+- **The `account`/`rank` of a clip must follow the game it matched, not the active account.** A
+  recording processed while the wrong account was selected gets mis-tagged. Two mechanisms heal
+  this: (1) the claim sweep (`rematch.claim_for_current_account`, on switch/scan) re-attempts
+  *unmatched* rows and persists **only on a match** (`pipeline.claim_reprocess`); (2)
+  `db.repair_clip_attribution` (also on every scan) fixes *already-matched* clips whose
+  account/rank drifted from their full-game row. A matched full game is authoritatively owned by
+  the account that played it (you can't match a game against an account that didn't play it), so
+  it's the source of truth for its clips' account **and** rank. In `pipeline._derive_fields`, a
+  clip's `account`, `rank`, title rank, and thumbnail rank all come from the matched game's owner
+  (`meta_by_match`) — keep them in lockstep; never let rank fall back to the active account alone.
 - **Dashboard JS caching**: served with `no-store` on purpose; if you remove that middleware,
   stale JS makes new buttons silently dead.
 

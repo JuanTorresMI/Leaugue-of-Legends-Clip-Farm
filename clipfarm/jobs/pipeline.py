@@ -130,10 +130,12 @@ def _derive_fields(path: Path, parsed, client) -> dict:
         else:  # CLIP
             with db.get_conn() as conn:
                 candidate_rows = db.list_matched_full_games(conn)
-            # match_id -> the account that owns that full game, so a matched clip is attributed
-            # to whoever actually PLAYED its game rather than merely whichever account is active
-            # now. This is what lets an account switch correctly claim a mis-tagged clip.
-            owner_by_match = {r["riot_match_id"]: r["account"] for r in candidate_rows}
+            # match_id -> (account, rank) of the full game that owns it, so a matched clip is
+            # attributed to whoever actually PLAYED its game -- account AND rank together --
+            # rather than whichever account is active now. This is what lets an account switch
+            # correctly claim a mis-tagged clip, and keeps its rank from showing the active
+            # account's tier by mistake.
+            meta_by_match = {r["riot_match_id"]: (r["account"], r["rank"]) for r in candidate_rows}
             candidates = [_row_to_match_context(row) for row in candidate_rows]
             matched_game = find_match_containing_timestamp(
                 candidates, parsed.recorded_at, settings.riot.clip_roll_tolerance_seconds
@@ -146,9 +148,10 @@ def _derive_fields(path: Path, parsed, client) -> dict:
                     client, parsed.recorded_at, settings.riot.full_game_max_duration_minutes
                 )
                 if matched_game is not None:
-                    owner_by_match[matched_game.match_id] = client.riot_id
+                    meta_by_match[matched_game.match_id] = (client.riot_id, rank)
 
             highlight = None
+            effective_rank = rank  # rank of the account that OWNS the matched game (set below)
             if matched_game:
                 highlight = analyze_clip_kills(
                     client,
@@ -166,18 +169,22 @@ def _derive_fields(path: Path, parsed, client) -> dict:
                     role=matched_game.role,
                     patch=matched_game.patch,
                 )
-                owner = owner_by_match.get(matched_game.match_id)
-                if owner:  # attribute to the game's true owner (else keep the current account)
-                    fields["account"] = owner
+                owner_account, owner_rank = meta_by_match.get(matched_game.match_id, (None, None))
+                if owner_account:
+                    # Attribute account AND rank to the game's true owner in lockstep, so a clip
+                    # never wears the active account's rank (e.g. a Platinum game tagged Emerald).
+                    fields["account"] = owner_account
+                    fields["rank"] = owner_rank
+                    effective_rank = owner_rank
 
-            metadata = build_clip_metadata(matched_game, highlight, parsed.recorded_at, rank)
+            metadata = build_clip_metadata(matched_game, highlight, parsed.recorded_at, effective_rank)
 
             overlay_text = streak_label(highlight.kill_streak).upper() if highlight else None
             output_jpg = settings.project_root / "data" / "thumbnails" / f"{path.stem}_clip.jpg"
             if matched_game and settings.thumbnails.composite_enabled:
                 frame = settings.project_root / "data" / "thumbnails" / f"{path.stem}_frame.png"
                 grab_frame(path, frame, settings.thumbnails.clip_frame_offset_seconds)
-                generate_composite(spec_for_clip(matched_game, highlight, rank), frame, output_jpg)
+                generate_composite(spec_for_clip(matched_game, highlight, effective_rank), frame, output_jpg)
                 frame.unlink(missing_ok=True)
             elif parsed.thumbnail_path is not None:
                 # Ascent already picked a representative frame for the clip -- overlay on top of

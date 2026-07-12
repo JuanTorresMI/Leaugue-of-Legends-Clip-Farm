@@ -110,3 +110,39 @@ def test_claim_reprocess_reports_api_error(monkeypatch):
 def test_claim_reprocess_handles_missing_file(monkeypatch):
     _fake_load(monkeypatch, exists=False)
     assert pipeline.claim_reprocess(1) == "gone"
+
+
+# --- repair_clip_attribution: heal clips mis-tagged to the active account -------------------
+
+def _matched(conn, *, kind, account, rank, match_id):
+    mid = db.insert_media_file(conn, f"C:/v/{kind}-{next(_seq)}.mp4", kind, "2026-07-01T00:00:00")
+    db.update_media_file(conn, mid, account=account, rank=rank, riot_match_id=match_id, status="ready")
+    return mid
+
+
+def test_repair_fixes_clip_tagged_to_wrong_account(temp_db):
+    with db.get_conn() as conn:
+        # A Platinum AltTwo game, and a clip from it left tagged Emerald/Mainacc (wrong account
+        # was active when the clip was processed).
+        _matched(conn, kind="full_game", account="AltTwo#NA1", rank="Platinum III", match_id="NA1_1")
+        clip = _matched(conn, kind="clip", account="Mainacc#NA1", rank="Emerald III", match_id="NA1_1")
+        # A clip already consistent with its game -- must be left alone (idempotent).
+        ok = _matched(conn, kind="clip", account="AltTwo#NA1", rank="Platinum III", match_id="NA1_1")
+        fixed = db.repair_clip_attribution(conn)
+        rows = {r["id"]: r for r in conn.execute("SELECT id, account, rank FROM media_files")}
+    assert fixed == 1
+    assert rows[clip]["account"] == "AltTwo#NA1" and rows[clip]["rank"] == "Platinum III"
+    assert rows[ok]["account"] == "AltTwo#NA1"  # unchanged
+    # Second run is a no-op.
+    with db.get_conn() as conn:
+        assert db.repair_clip_attribution(conn) == 0
+
+
+def test_repair_ignores_clips_without_a_matched_full_game(temp_db):
+    with db.get_conn() as conn:
+        # Clip matched by direct Riot query -- no full-game row for its match -> can't verify,
+        # leave it untouched.
+        clip = _matched(conn, kind="clip", account="Mainacc#NA1", rank="Emerald III", match_id="NA1_99")
+        assert db.repair_clip_attribution(conn) == 0
+        row = conn.execute("SELECT account FROM media_files WHERE id=?", (clip,)).fetchone()
+    assert row["account"] == "Mainacc#NA1"
