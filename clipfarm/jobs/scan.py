@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 import threading
 
-from clipfarm import db
 from clipfarm.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -50,13 +49,7 @@ def scan_now() -> dict:
         added = scan_recordings()
         rematch_pending()
         claim = claim_for_current_account()
-        # Correct any clip whose account/rank drifted from the game it matched (e.g. processed
-        # while the wrong account was selected). DB-only, so it's cheap to run every scan.
-        with db.get_conn() as conn:
-            repaired = db.repair_clip_attribution(conn)
-        if repaired:
-            logger.info("Repaired attribution on %d clip(s)", repaired)
-        return {"added": added, "claimed": claim.get("claimed", 0), "repaired": repaired}
+        return {"added": added, "claimed": claim.get("claimed", 0)}
 
 
 def start_scan_async() -> threading.Thread:

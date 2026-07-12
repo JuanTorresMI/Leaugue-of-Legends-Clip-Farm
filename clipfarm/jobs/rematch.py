@@ -128,6 +128,60 @@ def claim_for_current_account() -> dict:
         return {"attempted": attempted, "claimed": claimed}
 
 
+# Rank tiers as they appear in a title's context suffix ("... | Emerald Jungle #shorts").
+_RANK_TIERS = ("Iron", "Bronze", "Silver", "Gold", "Platinum", "Emerald", "Diamond",
+               "Master", "Grandmaster", "Challenger")
+
+
+def _rank_tier(rank: str | None) -> str | None:
+    return rank.split()[0] if rank else None
+
+
+def stale_metadata_clip_ids() -> list[int]:
+    """Matched clips whose *title* names a rank tier different from their stored rank -- the
+    tell-tale of a clip processed while the wrong account was active, whose title + thumbnail
+    were baked with one account's rank before the row was re-attributed to another (e.g. a
+    Platinum game's clip still titled 'Emerald'). Published/approved and source-deleted clips
+    are left alone."""
+    with db.get_conn() as conn:
+        rows = db.clip_metadata_rows(conn)
+    stale = []
+    for r in rows:
+        tier = _rank_tier(r["rank"])
+        if not tier:
+            continue
+        title_tiers = [t for t in _RANK_TIERS if t in r["draft_title"]]
+        if title_tiers and tier not in title_tiers:
+            stale.append(r["id"])
+    return stale
+
+
+def repair_stale_metadata() -> dict:
+    """One-shot (re-runnable) deep repair: reprocess clips whose title/thumbnail rank drifted
+    from their attribution, so title, thumbnail, and fields are regenerated together and stay
+    consistent. Unlike a field-only patch this can't leave a 'Platinum' row wearing an 'Emerald'
+    title. Needs a valid Riot key; skips cleanly if it's down. Returns counts."""
+    from clipfarm.jobs.pipeline import reprocess
+
+    with _SWEEP_LOCK:
+        ids = stale_metadata_clip_ids()
+        if not ids:
+            return {"stale": 0, "repaired": 0}
+        if not get_riot_client().check_key():
+            logger.warning("Metadata repair skipped: Riot API key is expired/invalid.")
+            return {"stale": len(ids), "repaired": 0, "key_expired": True}
+
+        repaired = 0
+        for mid in ids:
+            try:
+                reprocess(mid)
+                repaired += 1
+            except Exception:  # noqa: BLE001 -- one bad clip mustn't abort the batch
+                logger.exception("Metadata repair failed for clip %s", mid)
+        logger.info("Metadata repair: %d stale, %d reprocessed", len(ids), repaired)
+        return {"stale": len(ids), "repaired": repaired}
+
+
 def start_background_sweep(interval_seconds: int) -> threading.Thread:
     """Daemon thread: run the sweep on a timer. Cheap when nothing is pending."""
 

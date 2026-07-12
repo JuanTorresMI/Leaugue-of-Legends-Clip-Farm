@@ -140,16 +140,17 @@ few seconds; `metrics.js` loads `/api/metrics` and re-renders — follow the exi
   `Path.resolve()` results (see `paths.classify_media`).
 - **`media_files` rows are never deleted** — archiving sets `source_deleted_at`. Queries that
   should exclude archived items must filter on it (see `db.list_queue`).
-- **The `account`/`rank` of a clip must follow the game it matched, not the active account.** A
-  recording processed while the wrong account was selected gets mis-tagged. Two mechanisms heal
-  this: (1) the claim sweep (`rematch.claim_for_current_account`, on switch/scan) re-attempts
-  *unmatched* rows and persists **only on a match** (`pipeline.claim_reprocess`); (2)
-  `db.repair_clip_attribution` (also on every scan) fixes *already-matched* clips whose
-  account/rank drifted from their full-game row. A matched full game is authoritatively owned by
-  the account that played it (you can't match a game against an account that didn't play it), so
-  it's the source of truth for its clips' account **and** rank. In `pipeline._derive_fields`, a
-  clip's `account`, `rank`, title rank, and thumbnail rank all come from the matched game's owner
-  (`meta_by_match`) — keep them in lockstep; never let rank fall back to the active account alone.
+- **Derive a clip's account, rank, title, and thumbnail together — never patch one in isolation.**
+  A recording processed while the wrong account was selected gets mis-tagged. The single source of
+  truth is the matched full game's owner: in `pipeline._derive_fields`, a clip's `account`, `rank`,
+  title rank, and thumbnail rank all come from `meta_by_match` in lockstep (a matched full game is
+  authoritatively owned by the account that played it — you can't match a game against an account
+  that didn't play it). Healing paths: (1) the claim sweep (`rematch.claim_for_current_account`, on
+  switch/scan) re-attempts *unmatched* rows, persisting **only on a match** (`claim_reprocess`);
+  (2) `rematch.repair_stale_metadata` (CLI `repair-metadata`) reprocesses clips whose *title* rank
+  disagrees with their stored rank. **Do not** "fix" attribution by patching the `account`/`rank`
+  columns alone — that was tried and it left the title/thumbnail (baked at processing time) showing
+  the old rank, i.e. a "Platinum" row with an "Emerald" title. Always regenerate via `reprocess`.
 - **Dashboard JS caching**: served with `no-store` on purpose; if you remove that middleware,
   stale JS makes new buttons silently dead.
 

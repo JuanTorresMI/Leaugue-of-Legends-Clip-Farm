@@ -140,6 +140,24 @@ def cmd_refresh_drafts(_: argparse.Namespace) -> None:
         print(f"  {name} -> {'matched' if matched else 'unmatched'}")
 
 
+def cmd_repair_metadata(_: argparse.Namespace) -> None:
+    """Reprocess clips whose title/thumbnail rank drifted from their attribution (a legacy
+    artifact of clips processed while the wrong account was selected), regenerating title +
+    thumbnail + fields consistently. Re-runnable and safe; needs a valid Riot key."""
+    from clipfarm.jobs.rematch import repair_stale_metadata
+
+    db.init_db()
+    result = repair_stale_metadata()
+    if result.get("key_expired"):
+        print(f"{result['stale']} clip(s) need repair, but the Riot API key is expired -- "
+              "refresh RIOT_API_KEY and re-run.")
+        sys.exit(1)
+    if result["stale"] == 0:
+        print("No clips need metadata repair -- everything is consistent.")
+    else:
+        print(f"Metadata repair: {result['repaired']}/{result['stale']} clip(s) reprocessed.")
+
+
 def cmd_backpost_facebook(_: argparse.Namespace) -> None:
     """Post every clip already published to YouTube (but not yet to Facebook) as a Reel.
     Idempotent -- re-running skips clips already on Facebook. Respects Meta's 30 Reels/24h cap."""
@@ -211,6 +229,10 @@ def main() -> None:
     subparsers.add_parser(
         "backpost-facebook", help="Post YouTube-published clips to Facebook Reels (idempotent)"
     ).set_defaults(func=cmd_backpost_facebook)
+    subparsers.add_parser(
+        "repair-metadata",
+        help="Regenerate title/thumbnail for clips whose rank drifted from their attribution",
+    ).set_defaults(func=cmd_repair_metadata)
     subparsers.add_parser("list-accounts", help="List saved Riot accounts (* = active)").set_defaults(
         func=cmd_list_accounts
     )

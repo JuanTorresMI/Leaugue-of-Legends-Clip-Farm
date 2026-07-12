@@ -102,10 +102,14 @@ them to the account that truly owns the game and filling in the real title/thumb
 persists a recording on a genuine match, so it never steals another account's clips, and a
 per-recording marker means repeated switches don't re-hit the Riot API for the same misses.
 
-A separate, Riot-API-free **attribution repair** runs on every scan: a clip carries the account
-**and rank** of the game it matched, not whichever account was active when it was processed — so
-a Platinum game's clip can never stay stamped with another account's Emerald rank. (A matched full
-game is reliably owned by the account that played it, which makes this safe to apply in bulk.)
+A clip is always attributed to **the account that owns the game it matched** — its account, rank,
+title, and thumbnail are all derived from that one source, together, so a Platinum game's clip can
+never be stamped with another account's Emerald rank (a matched full game is reliably owned by the
+account that played it). If older clips were left inconsistent by an earlier version — a title or
+thumbnail baked with the wrong rank — run **`python -m clipfarm.cli repair-metadata`** once: it
+finds clips whose title rank disagrees with their attribution and **reprocesses them** so the
+title, thumbnail, and fields are regenerated as a consistent set (it skips published/approved
+clips and needs a valid Riot key; re-runnable and safe).
 
 ## Auto-post scheduler (drip, don't dump)
 
@@ -250,6 +254,12 @@ If the font or CDN is unavailable, thumbnail generation degrades gracefully to a
   Facebook; idempotent, respects Meta's 30 Reels/24h cap):
   ```
   python -m clipfarm.cli backpost-facebook
+  ```
+- **Repair drifted clip metadata** (regenerate title + thumbnail for clips whose rank no longer
+  matches their attribution — e.g. clips processed while the wrong account was selected;
+  re-runnable, needs a valid Riot key):
+  ```
+  python -m clipfarm.cli repair-metadata
   ```
 - **Switch accounts** — playing on a smurf/alt? Use the dashboard header dropdown (the `+` adds a
   new one), or the CLI. The Riot ID is validated before switching, and each recording is tagged

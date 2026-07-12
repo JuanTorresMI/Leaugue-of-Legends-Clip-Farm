@@ -112,37 +112,42 @@ def test_claim_reprocess_handles_missing_file(monkeypatch):
     assert pipeline.claim_reprocess(1) == "gone"
 
 
-# --- repair_clip_attribution: heal clips mis-tagged to the active account -------------------
+# --- stale-metadata detection: title's rank disagrees with the stored rank ------------------
 
-def _matched(conn, *, kind, account, rank, match_id):
-    mid = db.insert_media_file(conn, f"C:/v/{kind}-{next(_seq)}.mp4", kind, "2026-07-01T00:00:00")
-    db.update_media_file(conn, mid, account=account, rank=rank, riot_match_id=match_id, status="ready")
+def _clip(conn, *, rank, title, status="ready", match_id="NA1_1", source_deleted=False):
+    mid = db.insert_media_file(conn, f"C:/v/clip-{next(_seq)}.mp4", "clip", "2026-07-01T00:00:00")
+    fields = {"rank": rank, "draft_title": title, "riot_match_id": match_id, "status": status}
+    if source_deleted:
+        fields["source_deleted_at"] = "2026-07-05T00:00:00"
+    db.update_media_file(conn, mid, **fields)
     return mid
 
 
-def test_repair_fixes_clip_tagged_to_wrong_account(temp_db):
+def test_stale_metadata_flags_title_rank_mismatch(temp_db):
+    from clipfarm.jobs import rematch
     with db.get_conn() as conn:
-        # A Platinum AltTwo game, and a clip from it left tagged Emerald/Mainacc (wrong account
-        # was active when the clip was processed).
-        _matched(conn, kind="full_game", account="AltTwo#NA1", rank="Platinum III", match_id="NA1_1")
-        clip = _matched(conn, kind="clip", account="Mainacc#NA1", rank="Emerald III", match_id="NA1_1")
-        # A clip already consistent with its game -- must be left alone (idempotent).
-        ok = _matched(conn, kind="clip", account="AltTwo#NA1", rank="Platinum III", match_id="NA1_1")
-        fixed = db.repair_clip_attribution(conn)
-        rows = {r["id"]: r for r in conn.execute("SELECT id, account, rank FROM media_files")}
-    assert fixed == 1
-    assert rows[clip]["account"] == "AltTwo#NA1" and rows[clip]["rank"] == "Platinum III"
-    assert rows[ok]["account"] == "AltTwo#NA1"  # unchanged
-    # Second run is a no-op.
-    with db.get_conn() as conn:
-        assert db.repair_clip_attribution(conn) == 0
+        bad = _clip(conn, rank="Platinum III", title="Caitlyn deletes Darius | Emerald Jungle #shorts")
+        good = _clip(conn, rank="Platinum III", title="Caitlyn deletes Darius | Platinum Jungle #shorts")
+        no_rank = _clip(conn, rank="Platinum III", title="Caitlyn INSANE Highlight #shorts")  # no tier in title
+    ids = set(rematch.stale_metadata_clip_ids())
+    assert bad in ids
+    assert good not in ids and no_rank not in ids
 
 
-def test_repair_ignores_clips_without_a_matched_full_game(temp_db):
+def test_stale_metadata_skips_published_approved_and_deleted(temp_db):
+    from clipfarm.jobs import rematch
     with db.get_conn() as conn:
-        # Clip matched by direct Riot query -- no full-game row for its match -> can't verify,
-        # leave it untouched.
-        clip = _matched(conn, kind="clip", account="Mainacc#NA1", rank="Emerald III", match_id="NA1_99")
-        assert db.repair_clip_attribution(conn) == 0
-        row = conn.execute("SELECT account FROM media_files WHERE id=?", (clip,)).fetchone()
-    assert row["account"] == "Mainacc#NA1"
+        pub = _clip(conn, rank="Platinum III", title="X | Emerald Mid #shorts", status="published")
+        appr = _clip(conn, rank="Platinum III", title="X | Emerald Mid #shorts", status="approved")
+        gone = _clip(conn, rank="Platinum III", title="X | Emerald Mid #shorts", source_deleted=True)
+    ids = set(rematch.stale_metadata_clip_ids())
+    assert pub not in ids and appr not in ids and gone not in ids
+
+
+def test_repair_stale_metadata_noop_when_consistent(temp_db, monkeypatch):
+    from clipfarm.jobs import rematch
+    with db.get_conn() as conn:
+        _clip(conn, rank="Platinum III", title="Caitlyn | Platinum Jungle #shorts")
+    # No stale rows -> returns immediately without needing a Riot key.
+    monkeypatch.setattr(rematch, "get_riot_client", lambda: (_ for _ in ()).throw(AssertionError("no key")))
+    assert rematch.repair_stale_metadata() == {"stale": 0, "repaired": 0}

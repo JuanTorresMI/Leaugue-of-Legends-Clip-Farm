@@ -228,39 +228,18 @@ def claimable_media_files(conn: sqlite3.Connection, current_account: str) -> lis
     ).fetchall()
 
 
-def repair_clip_attribution(conn: sqlite3.Connection) -> int:
-    """Fix clips whose account/rank disagree with the full game they matched.
-
-    A *matched* full game is reliably owned by the account that played it -- you can't match a
-    game against an account that didn't play it -- so its account+rank are authoritative for
-    every clip from the same match. This heals clips that were matched to the correct game but
-    stamped with whichever account happened to be active at processing time (e.g. a Platinum
-    game's clip left tagged Emerald because a different account was selected). DB-only and
-    idempotent; returns the number of clips corrected."""
-    owners = {
-        r["riot_match_id"]: (r["account"], r["rank"])
-        for r in conn.execute(
-            "SELECT riot_match_id, account, rank FROM media_files "
-            "WHERE kind = 'full_game' AND riot_match_id IS NOT NULL AND account IS NOT NULL"
-        )
-    }
-    fixed = 0
-    clips = conn.execute(
-        "SELECT id, riot_match_id, account, rank FROM media_files "
-        "WHERE kind = 'clip' AND riot_match_id IS NOT NULL"
+def clip_metadata_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Matched clips eligible for the metadata-consistency repair: not published/approved (don't
+    disturb live or user-edited items) and their source still present. Returns id, rank, and the
+    draft title so the caller can spot a title whose rank no longer matches the stored rank."""
+    return conn.execute(
+        """
+        SELECT id, rank, draft_title FROM media_files
+        WHERE kind = 'clip' AND riot_match_id IS NOT NULL AND draft_title IS NOT NULL
+          AND status NOT IN ('published', 'approved')
+          AND source_deleted_at IS NULL
+        """
     ).fetchall()
-    for r in clips:
-        owner = owners.get(r["riot_match_id"])
-        if owner is None:
-            continue
-        owner_account, owner_rank = owner
-        if r["account"] != owner_account or r["rank"] != owner_rank:
-            conn.execute(
-                "UPDATE media_files SET account = ?, rank = ?, updated_at = datetime('now') WHERE id = ?",
-                (owner_account, owner_rank, r["id"]),
-            )
-            fixed += 1
-    return fixed
 
 
 def mark_claim_checked(conn: sqlite3.Connection, media_file_id: int, account: str) -> None:
