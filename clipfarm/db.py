@@ -132,6 +132,7 @@ _MIGRATION_COLUMNS = [
     ("media_files", "highlight_ms", "INTEGER"),  # game-relative ts of a clip's key kill, for dedup
     ("media_files", "source_deleted_at", "TEXT"),  # set when the on-disk recording is gone (Ascent rollover)
     ("media_files", "published_at", "TEXT"),        # first successful publish time (best-time analysis)
+    ("media_files", "title_variant", "TEXT"),       # which A/B title style the draft used (CTR experiment)
     ("autopost_log", "kind", "TEXT DEFAULT 'clip'"),  # separate clip vs full-game cadence tracks
 ]
 
@@ -466,7 +467,7 @@ def latest_video_stats(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT vs.*, m.kind, m.champion, m.role, m.rank, m.kill_streak, m.queue_type,
-               m.draft_title, m.recorded_at, m.published_at
+               m.draft_title, m.recorded_at, m.published_at, m.title_variant
         FROM video_stats vs
         JOIN (
             -- MAX(id), not MAX(fetched_at): id is monotonic, so it breaks same-second ties.

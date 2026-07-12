@@ -11,6 +11,13 @@ const TIER_META = {
   weak: { label: "Weak", icon: "⚠️" },
 };
 
+// A/B title hook styles (see metadata_builder._TITLE_VARIANTS on the backend).
+const VARIANT_LABELS = { hype: "Direct hype", wait: "“Wait for it…”", why: "“This is why…”" };
+
+// Views gained in the last 24h, rendered as a green +delta so movement pops in the tables.
+const delta = (n) =>
+  n === null || n === undefined ? "—" : n > 0 ? `<span class="delta-up">+${fmt(n)}</span>` : fmt(n);
+
 let STATE = { videos: [], sort: {}, dir: {} };
 
 // ---------- summary cards ----------
@@ -22,6 +29,7 @@ function card(val, label, hint) {
 function renderOverviewCards(s, tiers) {
   document.getElementById("ov-cards").innerHTML = [
     card(fmt(s.total_views), "Total views"),
+    card(delta(s.views_24h), "Views (24h)", "Views gained across the channel in the last 24 hours"),
     card(hrs(s.total_watch_time_minutes), "Watch time"),
     card(pct(s.avg_view_pct), "Avg retention", "Average % of each video watched"),
     card(fmt(s.subscribers_gained), "Subs gained", "Subscribers attributed to your videos"),
@@ -37,6 +45,7 @@ function renderPlatformCards(elId, agg, isYouTube) {
   }
   const cards = [
     card(fmt(agg.total_views), "Views"),
+    card(delta(agg.views_24h), "Views (24h)"),
     card(hrs(agg.total_watch_time_minutes), "Watch time"),
     card(pct(agg.avg_view_pct), "Avg retention"),
     card(fmt(agg.total_likes), "Likes"),
@@ -183,7 +192,8 @@ function renderTable(platform) {
     .map((v) => {
       const title = v.url ? `<a href="${v.url}" target="_blank" rel="noopener">${esc(v.title) || "(untitled)"}</a>` : esc(v.title) || "(untitled)";
       const common = `<td class="title-cell">${title}</td><td>${tierCell(v.tier, v.views_vs_median)}</td>
-        <td>${v.kind === "full_game" ? "full game" : "clip"}</td><td class="num">${fmt(v.views)}</td>`;
+        <td>${v.kind === "full_game" ? "full game" : "clip"}</td><td class="num">${fmt(v.views)}</td>
+        <td class="num">${delta(v.views_24h)}</td>`;
       if (platform === "youtube") {
         return `<tr>${common}<td class="num">${pct(v.avg_view_pct)}</td><td class="num">${fmt(Math.round(v.watch_time_minutes || 0))}</td>
           <td class="num">${fmt(v.likes)}</td><td class="num">${fmt(v.comments)}</td>
@@ -235,6 +245,12 @@ async function loadMetrics() {
     bars(document.getElementById("kind-bars"), ins.kind_performance || [], "kind", "avg_views",
       (i) => `${fmt(i.avg_views)} avg · ${i.count}`);
     renderTierBar(ins.tier_counts || { strong: 0, average: 0, weak: 0 });
+    leadList(document.getElementById("rising"), ins.rising || [],
+      (v) => `+${fmt(v.views_24h)} · ${fmt(v.views)} total${v.views_per_day ? ` · ${fmt(v.views_per_day)}/day` : ""}`);
+    bars(document.getElementById("variant-bars"),
+      (ins.title_variants || []).map((i) => ({ ...i, label: VARIANT_LABELS[i.title_variant] || i.title_variant })),
+      "label", "avg_views",
+      (i) => `${fmt(i.avg_views)} avg · ${i.count} clip${i.count === 1 ? "" : "s"}${i.avg_view_pct != null ? " · " + pct(i.avg_view_pct) : ""}`);
     leadList(document.getElementById("retention-leaders"), ins.retention_leaders || [], (v) => `${pct(v.avg_view_pct)} · ${fmt(v.views)} views`);
     leadList(document.getElementById("conversion-leaders"), ins.conversion_leaders || [], (v) => `+${v.subscribers_gained} subs`);
     renderBestTime(data.hour_performance || [], data.recommended_hours || []);

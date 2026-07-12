@@ -39,3 +39,6 @@ class DraftMetadata:
     description: str
     hashtags: list[str]  # visible in the description
     tags: list[str] = field(default_factory=list)  # YouTube's tags API field (search keywords)
+    # Which A/B title style produced `title` (see metadata_builder._TITLE_VARIANTS). Stored per
+    # video so the metrics dashboard can measure which hook style actually earns views.
+    title_variant: str | None = None

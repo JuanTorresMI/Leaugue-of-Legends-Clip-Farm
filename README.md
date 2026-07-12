@@ -40,13 +40,16 @@ time-series** table keyed by the platform's video id, so **the data survives the
 being deleted** and accumulates indefinitely — the longer it runs, the richer the history.
 
 The page has three tabs:
-- **Overview** — channel totals (views, watch time, retention, subs gained), a **cumulative-views
-  growth chart** that builds up over time, a **strong / average / weak** performance mix, and a
-  "what's working" panel: strongest champions, clips-vs-full-games, **retention leaders**, and
-  **subscriber magnets** (the clips actually converting followers).
+- **Overview** — channel totals (views, watch time, retention, subs gained, **views gained in the
+  last 24h**), a **cumulative-views growth chart** that builds up over time, a **🚀 Rising now**
+  panel (the biggest 24h gainers — the earliest visible sign of a clip taking off), a **🧪 Title
+  styles** panel scoring the A/B title experiment, a **strong / average / weak** performance mix,
+  and a "what's working" panel: strongest champions, clips-vs-full-games, **retention leaders**,
+  and **subscriber magnets** (the clips actually converting followers).
 - **YouTube** / **Facebook** — each platform gets its own totals and a **sortable** video table
-  (click any column). Every video is tagged **🔥 strong / ➖ average / ⚠️ weak** relative to that
-  platform's own median views (with a retention bump), so weak content is obvious at a glance.
+  (click any column), including a **24h** view-delta column. Every video is tagged **🔥 strong /
+  ➖ average / ⚠️ weak** relative to that platform's own median views (with a retention bump), so
+  weak content is obvious at a glance.
 
 The strong/weak classification and all rollups live on the backend (`clipfarm/metrics/analysis.py`)
 so they're reusable and tested, not just UI sugar.
@@ -122,11 +125,27 @@ window, so a blip doesn't silently drop an upload.
 
 Before upload, clips get a single-pass edit for watchability: **9:16 vertical**, a **burned-in
 hook caption** over the first seconds (`PENTAKILL!`, champion name, …) — the biggest retention
-lever on the Shorts feed — a random **royalty-free music track mixed quietly under the game
-audio**, **loudness normalization**, and a **fade in/out**. Full games upload as-is. Controlled
-by the `editing:` block in `config.yaml` (`hook_caption`, `hook_seconds`, music volume, fade
-lengths, or `enabled: false` to upload clips raw). If any edit step fails, the clip falls back
-to a plain vertical conversion so an upload is never fully blocked.
+lever on the Shorts feed — a small translucent **channel-handle watermark** for the whole clip
+(brand recall for viewers who never open the description), a random **royalty-free music track
+mixed quietly under the game audio**, and **loudness normalization**. Full games upload as-is.
+Fades are **off by default on purpose**: the channel's best-retention Shorts loop seamlessly
+(retention leaders sit at 110–144% — viewers rewatching), and a fade telegraphs the loop point.
+Controlled by the `editing:` block in `config.yaml` (`hook_caption`, `hook_seconds`,
+`watermark_text`, music volume, fade lengths, or `enabled: false` to upload clips raw). If any
+edit step fails, the clip falls back to a plain vertical conversion so an upload is never fully
+blocked.
+
+## Title A/B testing
+
+Every kill clip is posted with one of three title hook styles, chosen deterministically per clip
+and **recorded on the row** so the dashboard can score them against each other:
+- **hype** — direct hype statement: `Draven INSANE TRIPLE KILL vs X 🔥`
+- **wait** — curiosity gap: `Wait for the TRIPLE KILL 🔥 Draven vs X`
+- **why** — lesson framing: `This is why you don't fight Draven 🔥`
+
+The **🧪 Title styles** panel on the metrics Overview compares average views and retention per
+style as data accumulates. Run `refresh-drafts` to re-roll queued (unpublished) titles into the
+experiment; already-published titles are never touched.
 
 ## Optimized for reach & monetization
 

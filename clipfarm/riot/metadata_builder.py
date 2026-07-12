@@ -4,9 +4,11 @@ Everything here is a *draft* -- the dashboard allows editing before anything pos
 
 Discoverability principles baked in:
 - The hook (champion + what happened) leads the title; rank/role context follows.
-- Single-kill titles rotate through verb phrasings deterministically (seeded by match id +
-  victim) so a batch of uploads doesn't read like a bot wrote it, but regenerating drafts
-  is stable.
+- Kill-clip titles rotate through three A/B hook styles ("hype" / "wait" / "why"),
+  picked deterministically per clip (seeded by match id + kill timestamp) so a batch of
+  uploads doesn't read like a bot wrote it, regenerating drafts is stable, and — because the
+  chosen style is stored on the row — the metrics dashboard can measure which style earns
+  the most views and retention.
 - Descriptions front-load searchable phrasing in the first two lines (what YouTube weighs
   most), then a hashtag block.
 - A separate `tags` list feeds YouTube's tags API field (500-char budget) with multi-word
@@ -55,6 +57,20 @@ def _pick_verb(seed: str) -> str:
 
 def _pick_hype(seed: str) -> str:
     return _HYPE_WORDS[zlib.crc32(seed.encode()) % len(_HYPE_WORDS)]
+
+
+# The A/B title experiment. Each kill clip is assigned one of three hook styles; the choice is
+# stored on the row (media_files.title_variant) so the metrics dashboard can compare avg views
+# and retention per style and we learn which hook actually stops the scroll:
+#   hype -- direct hype statement (the original style): "Draven INSANE TRIPLE KILL vs X 🔥"
+#   wait -- curiosity gap / payoff tease:               "Wait for the TRIPLE KILL 🔥 Draven vs X"
+#   why  -- lesson framing (LoL viewers love these):    "This is why you don't fight Draven 🔥"
+_TITLE_VARIANTS = ("hype", "wait", "why")
+
+
+def _pick_variant(seed: str) -> str:
+    # Salted so the variant choice is independent of the verb/hype-word picks on the same seed.
+    return _TITLE_VARIANTS[zlib.crc32(f"variant:{seed}".encode()) % len(_TITLE_VARIANTS)]
 
 
 def _victims_phrase(victims: list[str]) -> str:
@@ -132,13 +148,20 @@ def build_clip_metadata(
     tier = _tier(rank)
     context_bits = " ".join(bit for bit in [tier, match.role] if bit)  # e.g. "Emerald Jungle"
 
+    variant: str | None = None
     if highlight is None:
         hook = f"{champ} INSANE Highlight 🔥"
         what_happened = f"{champ} highlight from a {match.queue_type} game"
         streak_hashtag = None
         streak_tag = None
     elif highlight.kill_streak >= 5:
-        hook = f"{champ} 1v5 PENTAKILL 😱"
+        seed = f"{match.match_id}:{highlight.first_kill_ms or recorded_at.isoformat()}"
+        variant = _pick_variant(seed)
+        hook = {
+            "hype": f"{champ} 1v5 PENTAKILL 😱",
+            "wait": f"Wait for the PENTAKILL 😱 {champ}",
+            "why": f"This is why you never dive {champ} 😱 PENTAKILL",
+        }[variant]
         what_happened = f"{champ} gets a 1v5 PENTAKILL in {match.queue_type}"
         streak_hashtag = "#Pentakill"
         streak_tag = "pentakill"
@@ -146,15 +169,27 @@ def build_clip_metadata(
         streak = streak_label(highlight.kill_streak).upper()
         victims = _victims_phrase(highlight.victim_champions)
         emoji = _STREAK_EMOJI.get(highlight.kill_streak, "🔥")
+        seed = f"{match.match_id}:{highlight.first_kill_ms or recorded_at.isoformat()}"
+        variant = _pick_variant(seed)
         hype = _pick_hype(f"{match.match_id}:{highlight.kill_streak}")
-        hook = f"{champ} {hype} {streak} vs {victims} {emoji}"
+        hook = {
+            "hype": f"{champ} {hype} {streak} vs {victims} {emoji}",
+            "wait": f"Wait for the {streak} {emoji} {champ} vs {victims}",
+            "why": f"This is why you don't fight {champ} {emoji} {streak}",
+        }[variant]
         what_happened = f"{champ} gets a {streak_label(highlight.kill_streak)} on {victims} in {match.queue_type}"
         streak_hashtag = f"#{streak_label(highlight.kill_streak).replace(' ', '')}"
         streak_tag = streak_label(highlight.kill_streak).lower()
     else:
         victim = display_name(highlight.victim_champions[0]) if highlight.victim_champions else "the enemy"
-        verb = _pick_verb(f"{match.match_id}:{victim}:{recorded_at.isoformat()}")
-        hook = f"{champ} {verb} {victim} 💀"
+        seed = f"{match.match_id}:{victim}:{recorded_at.isoformat()}"
+        variant = _pick_variant(seed)
+        verb = _pick_verb(seed)
+        hook = {
+            "hype": f"{champ} {verb} {victim} 💀",
+            "wait": f"Wait for it… {champ} vs {victim} 😳",
+            "why": f"This is why you don't 1v1 {champ} 💀",
+        }[variant]
         what_happened = f"{champ} {verb} {victim} in {match.queue_type}"
         streak_hashtag = None
         streak_tag = "solo kill"
@@ -196,7 +231,9 @@ def build_clip_metadata(
         tags.append(streak_tag)
         tags.append(f"{champ_lower} {streak_tag}")
 
-    return DraftMetadata(title=title, description=description, hashtags=hashtags, tags=_cap_tags(tags))
+    return DraftMetadata(
+        title=title, description=description, hashtags=hashtags, tags=_cap_tags(tags), title_variant=variant
+    )
 
 
 def build_full_game_metadata(

@@ -58,7 +58,7 @@ def _row_to_match_context(row: sqlite3.Row) -> MatchContext:
 _MATCH_FIELDS = (
     "riot_match_id", "participant_id", "champion", "kda", "win", "queue_type",
     "game_start_ms", "game_end_ms", "role", "patch", "opponent_champion", "kill_streak",
-    "highlight_ms", "error_message",
+    "highlight_ms", "title_variant", "error_message",
 )
 
 
@@ -181,6 +181,7 @@ def _derive_fields(path: Path, parsed, client) -> dict:
         fields["draft_description"] = metadata.description
         fields["hashtags"] = metadata.hashtags
         fields["tags"] = metadata.tags
+        fields["title_variant"] = metadata.title_variant
 
         if fields.get("riot_match_id"):
             fields["status"] = "ready"

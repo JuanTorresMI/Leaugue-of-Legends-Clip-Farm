@@ -42,3 +42,51 @@ def test_pick_music_returns_a_track(tmp_path, monkeypatch):
     monkeypatch.setattr(edit, "get_settings", lambda: _Settings())
     picked = edit.pick_music()
     assert picked is not None and picked.name == "song.mp3"  # only the audio file is eligible
+
+
+def test_render_watermark_png(tmp_path, monkeypatch):
+    class _Settings:
+        project_root = tmp_path  # no Anton font here -> falls back to Pillow's default font
+
+    monkeypatch.setattr(edit, "get_settings", lambda: _Settings())
+    out = edit._render_watermark_png("@YourChannel", tmp_path / "wm.png")
+    assert out is not None and out.exists() and out.stat().st_size > 0
+
+
+def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
+    """The watermark PNG becomes a bounded looped input overlaid for the whole clip."""
+    captured = {}
+
+    class _Ed:
+        enabled = True
+        music_dir = tmp_path / "no-music"
+        clip_music_volume = 0.18
+        normalize_audio = True
+        fade_in_seconds = 0.0
+        fade_out_seconds = 0.0
+        hook_caption = False
+        hook_seconds = 2.5
+        watermark_text = "@YourChannel"
+
+    class _Ascent:
+        ffmpeg_path = "ffmpeg"
+
+    class _Settings:
+        editing = _Ed()
+        ascent = _Ascent()
+        project_root = tmp_path
+
+    monkeypatch.setattr(edit, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(edit, "duration_seconds", lambda p: 34.3)
+
+    def fake_run(args):
+        captured["args"] = args
+
+    monkeypatch.setattr(edit, "_run", fake_run)
+    edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4")
+
+    args = captured["args"]
+    fc = args[args.index("-filter_complex") + 1]
+    assert "[1:v]overlay=0:0" in fc  # watermark input overlaid over the whole clip
+    assert "-t" in args and "34.30" in args  # looped PNG bounded to the clip duration
+    assert "fade" not in fc  # fades are off -> seamless loop

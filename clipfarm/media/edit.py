@@ -50,10 +50,21 @@ def hook_text_for(media_file) -> str | None:
     return "WATCH THIS"
 
 
-def _render_caption_png(text: str, out_path: Path) -> Path | None:
-    """Render the hook line as a transparent 1080x1920 PNG (Anton, white on a heavy black
-    outline) so it can be overlaid with a plain ffmpeg overlay -- far more robust across
-    platforms than ffmpeg's drawtext escaping. Returns None if Pillow/font is unavailable."""
+def _render_text_png(
+    text: str,
+    out_path: Path,
+    *,
+    y_frac: float,
+    max_size: int,
+    min_size: int,
+    stroke: int,
+    alpha: int = 255,
+    uppercase: bool = True,
+) -> Path | None:
+    """Render a text line as a transparent 1080x1920 PNG (Anton, white on a black outline) so
+    it can be overlaid with a plain ffmpeg overlay -- far more robust across platforms than
+    ffmpeg's drawtext escaping. The font shrinks from max_size until the line fits 90% of the
+    width. Returns None if Pillow/font is unavailable."""
     try:
         from PIL import Image, ImageDraw, ImageFont
     except Exception:  # noqa: BLE001
@@ -63,11 +74,12 @@ def _render_caption_png(text: str, out_path: Path) -> Path | None:
     canvas = Image.new("RGBA", (_VW, _VH), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
-    text = text.upper()
+    if uppercase:
+        text = text.upper()
     max_w = int(_VW * 0.9)
-    size = 150
+    size = max_size
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont
-    while size >= 60:
+    while size >= min_size:
         try:
             font = ImageFont.truetype(str(font_path), size)
         except OSError:
@@ -75,16 +87,19 @@ def _render_caption_png(text: str, out_path: Path) -> Path | None:
                 font = ImageFont.load_default(size=size)
             except TypeError:
                 font = ImageFont.load_default()
-        bbox = draw.textbbox((0, 0), text, font=font, stroke_width=8)
+        bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
         if bbox[2] - bbox[0] <= max_w:
             break
         size -= 10
 
-    bbox = draw.textbbox((0, 0), text, font=font, stroke_width=8)
+    bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
     tw = bbox[2] - bbox[0]
     x = (_VW - tw) // 2 - bbox[0]
-    y = int(_VH * 0.16) - bbox[1]  # upper third, clear of the phone UI at the very top
-    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255), stroke_width=8, stroke_fill=(0, 0, 0, 255))
+    y = int(_VH * y_frac) - bbox[1]
+    draw.text(
+        (x, y), text, font=font,
+        fill=(255, 255, 255, alpha), stroke_width=stroke, stroke_fill=(0, 0, 0, alpha),
+    )
 
     try:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +107,21 @@ def _render_caption_png(text: str, out_path: Path) -> Path | None:
         return out_path
     except OSError:
         return None
+
+
+def _render_caption_png(text: str, out_path: Path) -> Path | None:
+    """The big hook line burned over the clip's first seconds (upper third, clear of the
+    phone UI at the very top)."""
+    return _render_text_png(text, out_path, y_frac=0.16, max_size=150, min_size=60, stroke=8)
+
+
+def _render_watermark_png(text: str, out_path: Path) -> Path | None:
+    """A small translucent channel handle shown for the whole clip -- brand recall for viewers
+    who never open the description. Sits at ~74% height: below the action, above the Shorts
+    bottom UI (title/handle overlay), left of nothing (centered, clear of the right icon rail)."""
+    return _render_text_png(
+        text, out_path, y_frac=0.74, max_size=44, min_size=28, stroke=3, alpha=160, uppercase=False
+    )
 
 
 def pick_music() -> Path | None:
@@ -104,13 +134,18 @@ def pick_music() -> Path | None:
 
 
 def _fade_suffix(kind: str, duration: float, fin: float, fout: float) -> str:
-    """Build ',fade=...'/',afade=...' for video ('fade') or audio ('afade'), or '' when the
-    clip is too short to fade cleanly."""
+    """Build ',fade=...'/',afade=...' for video ('fade') or audio ('afade'). Empty when the
+    clip is too short to fade cleanly, and zeroed fades are dropped individually (the default
+    config runs fade-free so clips loop seamlessly -- see config.yaml's editing block)."""
     if duration < fin + fout + 0.5:
         return ""
     name = "afade" if kind == "audio" else "fade"
-    out_start = max(duration - fout, 0)
-    return f",{name}=t=in:st=0:d={fin:.2f},{name}=t=out:st={out_start:.2f}:d={fout:.2f}"
+    parts = []
+    if fin > 0:
+        parts.append(f",{name}=t=in:st=0:d={fin:.2f}")
+    if fout > 0:
+        parts.append(f",{name}=t=out:st={max(duration - fout, 0):.2f}:d={fout:.2f}")
+    return "".join(parts)
 
 
 def prepared_clip(video_path: Path, hook_text: str | None = None) -> Path:
@@ -171,17 +206,37 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
             caption_index = next_index
             next_index += 1
 
-    # --- video chain: blurred bg + crisp fg, then optional caption overlay, then fades ---
+    # Optional channel-handle watermark, shown for the whole clip. The looped PNG input is
+    # bounded to the clip's duration so the graph can't run past the main stream.
+    watermark_png: Path | None = None
+    watermark_index: int | None = None
+    if ed.watermark_text.strip():
+        watermark_png = _render_watermark_png(ed.watermark_text.strip(), output_path.with_suffix(".wm.png"))
+        if watermark_png is not None:
+            wm_seconds = duration if duration > 0 else 600
+            inputs += ["-loop", "1", "-t", f"{wm_seconds:.2f}", "-i", str(watermark_png)]
+            watermark_index = next_index
+            next_index += 1
+
+    # --- video chain: blurred bg + crisp fg, then caption/watermark overlays, then fades ---
     base = (
         f"[0:v]{_VERTICAL_BG}[bg];"
         f"[0:v]{_VERTICAL_FG}[fg];"
         f"[bg][fg]overlay=(W-w)/2:(H-h)/2"
     )
+    overlays: list[str] = []
     if caption_index is not None:
-        video_part = (
-            f"{base}[vbase];"
-            f"[vbase][{caption_index}:v]overlay=0:0:enable='lte(t,{ed.hook_seconds:.2f})'{vfade}[v]"
-        )
+        overlays.append(f"[{caption_index}:v]overlay=0:0:enable='lte(t,{ed.hook_seconds:.2f})'")
+    if watermark_index is not None:
+        overlays.append(f"[{watermark_index}:v]overlay=0:0")
+
+    if overlays:
+        steps = [f"{base}[v0]"]
+        for i, overlay in enumerate(overlays):
+            fade = vfade if i == len(overlays) - 1 else ""  # fades apply after the last overlay
+            out_label = "[v]" if i == len(overlays) - 1 else f"[v{i + 1}]"
+            steps.append(f"[v{i}]{overlay}{fade}{out_label}")
+        video_part = ";".join(steps)
     else:
         video_part = f"{base}{vfade}[v]"
 
@@ -211,4 +266,6 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
     finally:
         if caption_png is not None:
             caption_png.unlink(missing_ok=True)
+        if watermark_png is not None:
+            watermark_png.unlink(missing_ok=True)
     return output_path

@@ -151,9 +151,11 @@ integrations are complete and tested. Known open threads (discussed, not built):
 - **TikTok publisher** (Phase 4): registry + config stubs exist; needs `publishers/tiktok.py`,
   OAuth flow, and TikTok's app audit for public posting.
 - **Study the 2026-07-09 near-viral clip** (29k views @ 76% retention) and the retention
-  leaders to define a repeatable content formula.
-- **Auto-trim clips >60s** so they qualify as Shorts.
-- **A/B title rotation**, **per-champion daily variety cap**, **follower-conversion end-card**.
+  leaders to define a repeatable content formula. The **🚀 Rising now** panel + 24h velocity
+  metrics now surface these candidates automatically.
+- **Per-champion daily variety cap** for auto-post.
+- (Done: A/B title rotation ships as `title_variant`; auto-trim proved unnecessary — Ascent
+  clips are uniformly ~34s; the follower-conversion end-card became the loop-safe watermark.)
 
 The metrics dashboard's insight so far: retention is the lever that converts views into
 subscribers; clips vastly outperform full games; multi-kill ADC clips are the strongest bucket.

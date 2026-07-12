@@ -94,3 +94,45 @@ def test_channel_timeline_forward_fills_and_accumulates(temp_db):
     # day 2 carries v1 forward at its new 150 + facebook 40 = 190
     assert tl[1]["total_views"] == 190
     assert tl[1]["youtube_views"] == 150 and tl[1]["facebook_views"] == 40
+
+
+def test_velocity_views_gained_last_24h(temp_db):
+    with db.get_conn() as conn:
+        # v1: snapshot 25h ago at 100 views, fresh snapshot at 150 -> +50 in the last 24h.
+        _publish(conn, "v1", "youtube", views=100)
+        conn.execute("UPDATE video_stats SET fetched_at = datetime('now', '-25 hours')")
+        db.insert_video_stats(conn, "youtube", "v1", None, {"views": 150})
+        # v2: published under 24h ago -> delta counted from its first snapshot.
+        _publish(conn, "v2", "youtube", views=30)
+        db.insert_video_stats(conn, "youtube", "v2", None, {"views": 42})
+    recs = {r["platform_video_id"]: r for r in analysis.video_records()}
+    assert recs["v1"]["views_24h"] == 50
+    assert recs["v2"]["views_24h"] == 12
+    assert analysis.summary()["views_24h"] == 62
+    rising = analysis.insights()["rising"]
+    assert [r["platform_video_id"] for r in rising[:2]] == ["v1", "v2"]  # biggest gainer first
+
+
+def test_views_per_day_normalizes_by_age(temp_db):
+    with db.get_conn() as conn:
+        # Published 4 days ago with 200 views -> 50/day. Fresh video clamps to 1 day.
+        _publish(conn, "old", "youtube", views=200,
+                 published_at="2026-07-08 20:00:00")
+        conn.execute("UPDATE media_files SET published_at = datetime('now', '-4 days') "
+                     "WHERE id IN (SELECT media_file_id FROM publish_targets WHERE platform_video_id='old')")
+        _publish(conn, "new", "youtube", views=80)
+        conn.execute("UPDATE media_files SET published_at = datetime('now', '-2 hours') "
+                     "WHERE id IN (SELECT media_file_id FROM publish_targets WHERE platform_video_id='new')")
+    recs = {r["platform_video_id"]: r for r in analysis.video_records()}
+    assert recs["old"]["views_per_day"] == 50.0
+    assert recs["new"]["views_per_day"] == 80.0  # age clamped to 1 day
+
+
+def test_title_variant_performance(temp_db):
+    with db.get_conn() as conn:
+        for i, (variant, views) in enumerate([("wait", 900), ("wait", 1100), ("hype", 100), ("hype", 140)]):
+            mid = _publish(conn, f"t{i}", "youtube", views=views)
+            db.update_media_file(conn, mid, title_variant=variant)
+    variants = analysis.insights()["title_variants"]
+    assert variants[0]["title_variant"] == "wait" and variants[0]["avg_views"] == 1000
+    assert variants[1]["title_variant"] == "hype"

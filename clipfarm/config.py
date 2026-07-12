@@ -50,8 +50,13 @@ class EditingConfig(BaseModel):
     # Music level under the game audio, 0.0-1.0. Game audio stays at full; music sits beneath.
     clip_music_volume: float = 0.18
     normalize_audio: bool = True
-    fade_in_seconds: float = 0.4
-    fade_out_seconds: float = 0.6
+    # Fades default OFF for clips: the best-retention Shorts loop seamlessly (our own retention
+    # leaders sit at 110-144% -- viewers rewatching), and a fade telegraphs the loop point.
+    fade_in_seconds: float = 0.0
+    fade_out_seconds: float = 0.0
+    # Small translucent channel handle burned bottom-center of every clip. Brand recall for
+    # viewers who watch without ever opening the description; empty string disables it.
+    watermark_text: str = ""
     # Burn a big hook caption ("PENTAKILL!", champion name, ...) over the first few seconds of
     # each Short. This is the single biggest retention lever on the Shorts feed: it tells a
     # muted, auto-scrolling viewer what they're about to see before they flick away.

@@ -88,7 +88,7 @@ metrics/analysis.py          strong/weak classification, per-platform summary, i
 | `clipfarm/media/` | ffmpeg wrapper, frame grabs, composite thumbnails (Data Dragon art + Anton font), clip editing (vertical/music/caption/fades in one encode) |
 | `clipfarm/jobs/` | `pipeline` (ingest→enrich), `rematch` (retry unmatched), `publish_job` (dedup-guarded upload), `scheduler` (auto-post cadence), `scan` (manual/auto folder rescan), `cleanup` (file lifecycle), `models` (shared dataclasses) |
 | `clipfarm/publishers/` | `registry` (platform plug-in point), `youtube`, `facebook`, `dedup` (content signatures), `quota` (self-tracked daily upload quota) |
-| `clipfarm/metrics/` | `base` (provider plug-in point), `youtube_stats`, `facebook_stats`, `poller` (hourly snapshots), `analysis` (classification/insights/timeline) |
+| `clipfarm/metrics/` | `base` (provider plug-in point), `youtube_stats`, `facebook_stats`, `poller` (hourly snapshots), `analysis` (classification/insights/timeline + 24h velocity and title-A/B scoring from the time-series) |
 | `clipfarm/review/` | FastAPI app (`app.py` also starts all background workers), `routes.py` (every endpoint), vanilla-JS dashboard (`templates/` + `static/`, no build step) |
 | `clipfarm/cli.py` | All entry points (`watch`, `backfill`, `reauth-*`, `check-*`, `refresh-drafts`, `backpost-facebook`, account commands) |
 | `scripts/` | `backfill_existing` (process what's already on disk), `reauth_youtube`, `reauth_facebook` (interactive token minting) |
@@ -101,7 +101,7 @@ after first release live in `_MIGRATION_COLUMNS` and are `ALTER TABLE`-d in if m
 
 | Table | What it holds | Lifecycle |
 |---|---|---|
-| `media_files` | One row per recording: kind, `recorded_at`, match enrichment (champion/KDA/role/rank/patch/opponent), draft metadata, `content_hash` + `highlight_ms` (dedup), `source_deleted_at` (archived), `published_at` | Rows are **never deleted**, only archived (`source_deleted_at` set) when Ascent removes the file |
+| `media_files` | One row per recording: kind, `recorded_at`, match enrichment (champion/KDA/role/rank/patch/opponent), draft metadata, `title_variant` (which A/B hook style the title used), `content_hash` + `highlight_ms` (dedup), `source_deleted_at` (archived), `published_at` | Rows are **never deleted**, only archived (`source_deleted_at` set) when Ascent removes the file |
 | `publish_targets` | Per (media_file, platform): selected?, status `pending→uploading→published/failed`, `platform_video_id`, error | Unique on `(media_file_id, platform)` |
 | `published_content` | **The dedup ledger.** `(platform, content_key)` primary key; content keys are `file:<hash>`, `match:<id>`, `clip:<id>:<ms>` | Permanent. Reservation rows (no `platform_video_id` yet) are released on upload failure |
 | `autopost_log` | One row per scheduler firing, per track (`clip`/`full_game`) | Drives daily cap, per-game cap, min-gap spacing |

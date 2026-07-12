@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from statistics import mean
 
 from clipfarm import db
@@ -66,11 +66,59 @@ def _avg(values: list) -> float | None:
 
 # --- per-video records + strong/weak classification -----------------------------------------
 
+def _parse_ts(value: str | None) -> datetime | None:
+    """Parse a DB timestamp ('YYYY-MM-DD HH:MM:SS' or ISO) into a naive UTC datetime."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace(" ", "T")).replace(tzinfo=None)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _velocity_by_video() -> dict[tuple[str, str], int]:
+    """Views gained over the last ~24h per video, straight from the append-only time-series:
+    latest snapshot minus the newest snapshot at least 24h old (or the video's first snapshot
+    if it's younger than that). This is the 'what's moving right now' signal the algorithm
+    itself acts on -- a spike here is the earliest visible sign of a clip taking off."""
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT platform, platform_video_id, fetched_at, views FROM video_stats "
+            "WHERE views IS NOT NULL ORDER BY id"
+        ).fetchall()
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
+    latest: dict[tuple[str, str], int] = {}
+    baseline: dict[tuple[str, str], int] = {}
+    first: dict[tuple[str, str], int] = {}
+    for r in rows:
+        key = (r["platform"], r["platform_video_id"])
+        ts = _parse_ts(r["fetched_at"])
+        if ts is None:
+            continue
+        latest[key] = r["views"]
+        first.setdefault(key, r["views"])
+        if ts <= cutoff:
+            baseline[key] = r["views"]  # rows are id-ordered, so this ends on the newest pre-cutoff
+    return {key: views - baseline.get(key, first[key]) for key, views in latest.items()}
+
+
+def _views_per_day(views: int | None, published_at: str | None) -> float | None:
+    """Lifetime views normalized by age, so a week-old and a month-old clip compare fairly.
+    Ages under a day are clamped to 1 day to avoid wild extrapolation from a fresh upload."""
+    published = _parse_ts(published_at)
+    if views is None or published is None:
+        return None
+    age_days = (datetime.now(UTC).replace(tzinfo=None) - published).total_seconds() / 86400
+    return round(views / max(age_days, 1.0), 1)
+
+
 def video_records() -> list[dict]:
     """Latest snapshot per video, flattened with its match context and the metrics that actually
-    exist per platform (YouTube: subs gained; Facebook: reel plays -- both pulled from extra_json)."""
+    exist per platform (YouTube: subs gained; Facebook: reel plays -- both pulled from extra_json),
+    plus velocity: views gained in the last 24h and lifetime views/day."""
     with db.get_conn() as conn:
         rows = db.latest_video_stats(conn)
+    velocity = _velocity_by_video()
     records = []
     for r in rows:
         extra = _extra(r)
@@ -79,6 +127,7 @@ def video_records() -> list[dict]:
                 "platform": r["platform"],
                 "platform_video_id": r["platform_video_id"],
                 "title": r["draft_title"],
+                "title_variant": r["title_variant"],
                 "kind": r["kind"],
                 "champion": r["champion"],
                 "kill_streak": r["kill_streak"],
@@ -93,6 +142,8 @@ def video_records() -> list[dict]:
                 "avg_view_pct": r["avg_view_pct"],
                 "subscribers_gained": _int(extra.get("subscribers_gained")),
                 "reel_plays": _int(extra.get("reel_plays")),
+                "views_24h": velocity.get((r["platform"], r["platform_video_id"])),
+                "views_per_day": _views_per_day(r["views"], r["published_at"]),
                 "url": _url(r["platform"], r["platform_video_id"]),
             }
         )
@@ -151,6 +202,7 @@ def _aggregate(rows: list[dict]) -> dict:
         "total_watch_time_minutes": round(sum(r["watch_time_minutes"] or 0 for r in rows), 1),
         "subscribers_gained": sum(r["subscribers_gained"] or 0 for r in rows),
         "avg_view_pct": _avg([r["avg_view_pct"] for r in rows]),
+        "views_24h": sum(r["views_24h"] or 0 for r in rows),
     }
 
 
@@ -193,6 +245,7 @@ def insights(records: list[dict] | None = None) -> dict:
     records = records if records is not None else video_records()
     ret_pool = [r for r in records if r["avg_view_pct"] is not None and (r["views"] or 0) > 0]
     conv_pool = [r for r in records if r["subscribers_gained"]]
+    rising_pool = [r for r in records if (r["views_24h"] or 0) > 0]
 
     champ_perf = _group_perf(records, "champion")
     return {
@@ -200,6 +253,10 @@ def insights(records: list[dict] | None = None) -> dict:
         "best_champions": champ_perf[:5],
         "weak_champions": [c for c in champ_perf[::-1] if c["count"] >= 1][:5],
         "kind_performance": _group_perf(records, "kind"),
+        # Which A/B title hook style is winning (only kill clips carry a variant).
+        "title_variants": _group_perf(records, "title_variant"),
+        # What the algorithm is pushing RIGHT NOW -- biggest view gains in the last 24h.
+        "rising": sorted(rising_pool, key=lambda r: r["views_24h"], reverse=True)[:8],
         "retention_leaders": sorted(ret_pool, key=lambda r: r["avg_view_pct"], reverse=True)[:8],
         "conversion_leaders": sorted(conv_pool, key=lambda r: r["subscribers_gained"], reverse=True)[:8],
         "strong": [r for r in records if r["tier"] == "strong"][:12],

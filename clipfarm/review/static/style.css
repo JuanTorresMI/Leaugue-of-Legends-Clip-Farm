@@ -143,3 +143,6 @@ table.vtable tbody tr:hover { background: #1f2228; }
 }
 button.retry { padding: 0.15rem 0.55rem; font-size: 0.75rem; background: #b7791f; }
 button:disabled { opacity: 0.55; cursor: default; }
+
+/* views gained in the last 24h -- green so movement pops */
+.delta-up { color: #6fdc8c; font-weight: 600; }

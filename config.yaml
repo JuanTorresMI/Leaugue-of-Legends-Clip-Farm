@@ -35,22 +35,28 @@ thumbnails:
   composite_enabled: true
 
 editing:
-  # Clips get: 9:16 vertical + background music + loudness normalization + fade in/out,
-  # all in one encode. Full games upload as-is. Set enabled: false to upload clips raw.
+  # Clips get: 9:16 vertical + background music + loudness normalization, all in one encode.
+  # Full games upload as-is. Set enabled: false to upload clips raw.
   enabled: true
   # Drop your own royalty-free tracks here (e.g. from YouTube's Audio Library). A random one
-  # is picked per clip. Empty folder = no music, but normalization/fades still apply.
+  # is picked per clip. Empty folder = no music, but normalization still applies.
   music_dir: "./music"
   # Music level under the game audio (0.0-1.0). Game audio stays full; music sits beneath.
   clip_music_volume: 0.18
   normalize_audio: true
-  fade_in_seconds: 0.4
-  fade_out_seconds: 0.6
+  # Fades are OFF on purpose: the channel's best-retention Shorts loop seamlessly (retention
+  # leaders sit at 110-144% = viewers rewatching), and a fade telegraphs the loop point,
+  # breaking the rewatch. An abrupt action start also hooks faster than a fade-in.
+  fade_in_seconds: 0.0
+  fade_out_seconds: 0.0
   # Burn a big hook caption ("PENTAKILL!", champion name, ...) over the first few seconds of
   # each Short -- the biggest retention lever on the Shorts feed. Set hook_caption: false to
   # upload without it.
   hook_caption: true
   hook_seconds: 2.5
+  # Small translucent channel handle at the bottom of every clip -- brand recall for viewers
+  # who never open the description. Empty string ("") disables it.
+  watermark_text: "@YourChannel"
 
 youtube:
   default_full_game_visibility: public

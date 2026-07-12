@@ -125,3 +125,35 @@ def test_tags_respect_budget_and_dedupe():
     assert sum(len(t) for t in meta.tags) <= YOUTUBE_TAGS_CHAR_BUDGET
     assert len({t.lower() for t in meta.tags}) == len(meta.tags)
     assert "league of legends" in meta.tags
+
+
+def test_title_variants_rotate_and_are_recorded():
+    # Across many kill timestamps every A/B style should appear, and the style used must be
+    # recorded on the metadata so the dashboard can score it later.
+    seen = set()
+    for ms in range(0, 40):
+        highlight = ClipHighlight(
+            kill_streak=3, champion="JarvanIV", victim_champions=["Zed", "Ahri", "Lux"],
+            first_kill_ms=ms * 31_000,
+        )
+        meta = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II")
+        assert meta.title_variant in ("hype", "wait", "why")
+        seen.add(meta.title_variant)
+        assert len(meta.title) <= YOUTUBE_TITLE_LIMIT
+    assert seen == {"hype", "wait", "why"}
+
+
+def test_title_variant_is_deterministic_per_kill():
+    highlight = ClipHighlight(kill_streak=2, champion="JarvanIV",
+                              victim_champions=["MissFortune", "Leona"], first_kill_ms=840_000)
+    meta1 = build_clip_metadata(_match(), highlight, RECORDED_AT, rank=None)
+    meta2 = build_clip_metadata(_match(), highlight, RECORDED_AT, rank=None)
+    assert meta1.title == meta2.title
+    assert meta1.title_variant == meta2.title_variant
+
+
+def test_no_variant_without_a_kill():
+    # Full games and highlight-less clips have nothing to A/B -- no variant recorded.
+    assert build_clip_metadata(_match(), None, RECORDED_AT).title_variant is None
+    assert build_clip_metadata(None, None, RECORDED_AT).title_variant is None
+    assert build_full_game_metadata(_match(), RECORDED_AT).title_variant is None
