@@ -7,6 +7,19 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ---
 
+## 2026-07-13
+
+### Fixed — Facebook uploads failing on a render race
+- **Clips now render exactly once even when published to several platforms at the same time.**
+  After auto-post began targeting YouTube *and* Facebook, both publish jobs (run concurrently in
+  the publish thread pool) called `prepared_clip()` for the same clip and collided writing/
+  deleting the shared `_edited.mp4` / caption PNG — on Windows the Facebook job died with
+  `WinError 32` ("file used by another process"), so nothing reached Facebook. Added a per-clip
+  lock in `media/edit.prepared_clip` (double-checked cache) so the render happens once and the
+  other platform reuses it. Regression test covers the concurrent case.
+- **Operational note:** this fix (and the auto-post-to-Facebook change) only takes effect after
+  restarting `watch`; make sure only **one** `watch` process is running (see OPERATIONS.md).
+
 ## 2026-07-12
 
 ### Fixed — Facebook auto-posting (`501e6a3`)

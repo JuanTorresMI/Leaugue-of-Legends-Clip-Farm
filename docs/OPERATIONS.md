@@ -7,11 +7,13 @@ the *workflow* side of them. See [CHANGELOG.md](../CHANGELOG.md) for what change
 
 ## The five golden rules
 
-1. **Restart `watch` after any code change or `git pull`.** The dashboard, scheduler, and all
-   background workers run inside one long-lived `python -m clipfarm.cli watch` process. It does
-   **not** hot-reload. If you change code (or I do) and don't restart, the old behaviour keeps
-   running — and can re-introduce a bug you just fixed. Nearly every "it's still broken after the
-   fix" moment traced back to a stale `watch` process.
+1. **Run exactly one `watch`, and restart it after any code change or `git pull`.** The dashboard,
+   scheduler, and all background workers run inside one long-lived `python -m clipfarm.cli watch`
+   process. It does **not** hot-reload. If you change code (or I do) and don't restart, the old
+   behaviour keeps running — nearly every "it's still broken after the fix" moment traced back to a
+   stale `watch` process. Two `watch` processes at once means two schedulers/pollers competing (and
+   only one can bind port 8000) — kill them all and start a single fresh one. On Windows:
+   `Get-Process python | Stop-Process` then relaunch `python -m clipfarm.cli watch`.
 
 2. **Select the account you're about to play *before* you record.** A clip is tagged with
    whichever account is active when it's ingested. Play on the wrong selection and clips get the
@@ -47,6 +49,7 @@ nothing to do, and only reprocesses genuinely-inconsistent, not-yet-published cl
 | Symptom | Likely cause | Do this |
 |---|---|---|
 | Videos aren't posting to Facebook | Facebook not enabled, or `watch` on old code, or Page token expired | Enable Facebook in the dashboard; **restart `watch`**; `check-facebook-token`. Catch up already-posted clips with `backpost-facebook`. |
+| Facebook target `failed` with `WinError 32` / "file used by another process" | Old code: concurrent YouTube+Facebook jobs raced on the shared render | Fixed in code (per-clip render lock). **Restart `watch`**; failed items are retried automatically by the backfill sweep. |
 | A clip shows the wrong rank (e.g. Platinum game says "Emerald") | Clip processed while the wrong account was selected | `python -m clipfarm.cli repair-metadata` (regenerates title + thumbnail). Prevented going forward by the owner-attribution logic. |
 | Clips from an account stay `awaiting_match`/generic after switching to it | They were processed under a different account and are stranded | Switch to the owning account (or hit manual scan) with a **valid Riot key** — the claim pass adopts the ones that match. |
 | Lots of items stuck `awaiting_match` | Riot key expired, or games genuinely not finished/indexed yet | `check-riot-key`; if valid, they'll match on the next sweep once the games are in Riot's history. |

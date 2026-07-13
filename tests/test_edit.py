@@ -90,3 +90,48 @@ def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
     assert "[1:v]overlay=0:0" in fc  # watermark input overlaid over the whole clip
     assert "-t" in args and "34.30" in args  # looped PNG bounded to the clip duration
     assert "fade" not in fc  # fades are off -> seamless loop
+
+
+def test_prepared_clip_renders_once_under_concurrency(tmp_path, monkeypatch):
+    """Two platforms publishing the same clip at once must not both render it (the WinError 32
+    file-collision that stopped Facebook uploads). The per-clip lock makes it render once; the
+    second caller reuses the cache."""
+    import threading
+    import time
+
+    cache_dir = tmp_path / "data" / "converted"
+    cache_dir.mkdir(parents=True)
+
+    class _Ed:
+        enabled = True
+
+    class _Settings:
+        editing = _Ed()
+        project_root = tmp_path
+
+    monkeypatch.setattr(edit, "get_settings", lambda: _Settings())
+
+    renders = []
+
+    def fake_prepare(video_path, cache_path, hook_text=None):
+        renders.append(cache_path)
+        time.sleep(0.2)          # hold the lock long enough for the other thread to contend
+        cache_path.write_bytes(b"rendered")
+        return cache_path
+
+    monkeypatch.setattr(edit, "prepare_clip", fake_prepare)
+
+    src = tmp_path / "clip.mp4"
+    results = []
+
+    def worker():
+        results.append(edit.prepared_clip(src, "HOOK"))
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(renders) == 1                       # rendered exactly once despite 2 concurrent callers
+    assert len({str(r) for r in results}) == 1     # both got the same cached file

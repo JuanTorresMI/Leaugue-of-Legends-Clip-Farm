@@ -9,12 +9,26 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 from pathlib import Path
 
 from clipfarm.config import get_settings
 from clipfarm.media.ffmpeg import FfmpegError, _run, duration_seconds
 
 logger = logging.getLogger(__name__)
+
+# One publish of a clip can fan out to several platforms at once (YouTube Short + Facebook Reel),
+# and they run concurrently in the publish thread pool. Without serialization both would render
+# into the same _edited.mp4 / caption PNG simultaneously and collide (on Windows: WinError 32,
+# "the process cannot access the file because it is being used by another process"). A per-clip
+# lock makes the render happen exactly once; the other callers wait and reuse the cache.
+_PREPARE_LOCKS: dict[str, threading.Lock] = {}
+_PREPARE_LOCKS_GUARD = threading.Lock()
+
+
+def _prepare_lock(cache_path: Path) -> threading.Lock:
+    with _PREPARE_LOCKS_GUARD:
+        return _PREPARE_LOCKS.setdefault(str(cache_path), threading.Lock())
 
 _AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 # Vertical base: full frame centered and crisp over a blurred, stretched copy (see media/ffmpeg
@@ -158,15 +172,20 @@ def prepared_clip(video_path: Path, hook_text: str | None = None) -> Path:
     cache_path = settings.project_root / "data" / "converted" / f"{video_path.stem}_edited.mp4"
     if cache_path.exists():
         return cache_path
-    if settings.editing.enabled:
-        try:
-            return prepare_clip(video_path, cache_path, hook_text=hook_text)
-        except FfmpegError:
-            # An edit failure (bad filter graph, missing codec, ...) must never block the
-            # upload entirely -- fall back to a plain vertical conversion.
-            logger.exception("Full clip edit failed for %s; falling back to plain vertical", video_path)
-            return to_vertical(video_path, cache_path)
-    return to_vertical(video_path, cache_path)
+    # Serialize per clip so concurrent publishers (YouTube + Facebook) don't render into the same
+    # files at once. Re-check the cache inside the lock: whoever got here first may have built it.
+    with _prepare_lock(cache_path):
+        if cache_path.exists():
+            return cache_path
+        if settings.editing.enabled:
+            try:
+                return prepare_clip(video_path, cache_path, hook_text=hook_text)
+            except FfmpegError:
+                # An edit failure (bad filter graph, missing codec, ...) must never block the
+                # upload entirely -- fall back to a plain vertical conversion.
+                logger.exception("Full clip edit failed for %s; falling back to plain vertical", video_path)
+                return to_vertical(video_path, cache_path)
+        return to_vertical(video_path, cache_path)
 
 
 def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = None) -> Path:
