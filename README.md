@@ -304,8 +304,10 @@ Runtime state that shouldn't be in code lives in `data/` (SQLite, tokens, caches
 credential JSON) — all gitignored. `config.yaml` holds tunables; `.env` holds secrets/seeds.
 
 **Deep dives:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (data flow, DB schema, background
-workers, invariants) and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (dev setup, testing,
-step-by-step recipes for extending the app).
+workers, invariants), [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (dev setup, testing, step-by-step
+recipes for extending the app), [docs/OPERATIONS.md](docs/OPERATIONS.md) (day-to-day running,
+the golden rules for avoiding problems, and a troubleshooting table), and
+[CHANGELOG.md](CHANGELOG.md) (what changed and why, including one-time live-DB repairs).
 
 ## Extending: add a publishing platform
 
