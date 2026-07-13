@@ -9,6 +9,41 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ## 2026-07-13
 
+### Fixed — failed uploads now actually self-heal
+- **The retry backfill never worked for Facebook (or any non-YouTube platform).** It joined
+  failed targets against `autopost_log` on *platform*, but auto-posts only log their primary
+  platform (YouTube) — so a failed Facebook target could never match and sat failed forever.
+  It also ignored **manually-approved** items entirely (an Approve click that failed stayed
+  failed unless someone noticed and pressed Retry), and gave up on anything older than 48h —
+  which stranded every failure that outlived the bug that caused it.
+- Replaced with `retry_failed_publishes`: covers every failed *selected* target whose item is
+  still meant to go out (approved/ready, source on disk), on any platform. Bounded by a
+  per-target lifetime attempt cap (`retry_count` column, default 8 — no infinite churn on a
+  permanently-bad item; the dashboard Retry button ignores the cap) and paced to 2 per tick so
+  a backlog drains as a drip. The 9 stranded failures from 07-10..07-12 drain automatically
+  after a `watch` restart.
+
+### Fixed — a Riot 429 no longer permanently strands a recording
+- Transient Riot/API errors (429 rate limit, 5xx, network drops) during processing used to set
+  terminal `status='failed'`, which every sweep explicitly skips — 3 full games from 07-10 were
+  stranded that way. Transient errors now park the row as `awaiting_match`, which the rematch
+  sweep retries; the claim sweep also recognizes them and won't mark the row as a checked miss.
+- **One-time repair:** the 3 stranded full games were reprocessed and all matched (Zeri games,
+  including a 13/1/6 win), now `ready` for the long-form autopost track.
+
+### Added — subscriber-growth features
+- **Subscribe flash:** every clip now ends with a "SUBSCRIBE FOR MORE" overlay in its final
+  2.5s (config `editing.subscribe_cta_text` / `subscribe_cta_seconds`, same upper-third slot as
+  the hook caption — they never show at once). Shorts viewers act inside the video or not at
+  all; nothing was asking them. Verified on a real NVENC render (frame grabs: CTA present at
+  the end, absent mid-clip). Pre-CTA render caches were cleared (4.4 GB) so queued clips
+  re-render with it.
+- **Champion playlists:** full-game uploads are now filed into a public "«Champion» Full Games"
+  playlist (created on first use). Playlists chain in Up Next and turn a champion-curious
+  searcher into a session. Failure is cosmetic — an upload never fails over playlist trouble.
+- **Facebook wording:** descriptions posted to Facebook now say FOLLOW instead of the
+  YouTube-speak SUBSCRIBE.
+
 ### Fixed — Facebook uploads failing on a render race
 - **Clips now render exactly once even when published to several platforms at the same time.**
   After auto-post began targeting YouTube *and* Facebook, both publish jobs (run concurrently in
@@ -100,3 +135,4 @@ Applied idempotently on startup (`db._MIGRATION_COLUMNS`), so no manual step is 
 |---|---|
 | `media_files.title_variant` | which A/B title hook style the draft used |
 | `media_files.claim_checked_account` | last account the claim sweep tried this row for (dedupes Riot calls) |
+| `publish_targets.retry_count` | failed attempts so far (caps the auto-retry backfill at 8) |

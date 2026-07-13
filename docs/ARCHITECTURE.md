@@ -119,7 +119,7 @@ a daemon thread with a catch-all so one bad pass never kills the loop.
 | Worker | Module | Interval | Job |
 |---|---|---|---|
 | Rematch sweep | `jobs/rematch.py` | `riot.rematch_interval_seconds` (180s) | Retry `awaiting_match` items (their game wasn't in Match-V5 yet); give up after `rematch_give_up_hours` (48h) → generic metadata |
-| Auto-post scheduler | `jobs/scheduler.py` | ~1 min tick | Fire the best eligible clip on each configured hour slot (quality gate, per-game cap, min-gap); separate full-game track; backfills failed auto-posts via `db.failed_autopost_targets` |
+| Auto-post scheduler | `jobs/scheduler.py` | ~1 min tick | Fire the best eligible clip on each configured hour slot (quality gate, per-game cap, min-gap); separate full-game track; retries every failed selected target (paced, attempt-capped) via `db.retryable_failed_targets` |
 | Reconcile sweep | `jobs/cleanup.py` | 900s | Archive rows whose source Ascent deleted + remove our derived files. Skips the pass entirely if the Ascent folders are missing (drive offline guard) |
 | Stats poller | `metrics/poller.py` | 3600s | Snapshot stats for every published video via the provider registry; one platform failing doesn't stop the others |
 

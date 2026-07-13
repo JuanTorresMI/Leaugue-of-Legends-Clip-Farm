@@ -62,6 +62,11 @@ class EditingConfig(BaseModel):
     # muted, auto-scrolling viewer what they're about to see before they flick away.
     hook_caption: bool = True
     hook_seconds: float = 2.5
+    # Flash a subscribe ask over the LAST seconds of each clip. Shorts viewers almost never
+    # visit the channel page -- the ask has to happen inside the video, right after the payoff,
+    # while the finger is hovering. Empty string disables it.
+    subscribe_cta_text: str = ""
+    subscribe_cta_seconds: float = 2.5
 
 
 class YoutubeConfig(BaseModel):

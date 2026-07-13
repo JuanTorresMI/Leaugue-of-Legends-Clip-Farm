@@ -107,6 +107,55 @@ def delete(video_id: str) -> None:
     service.videos().delete(id=video_id).execute()
 
 
+def _find_or_create_playlist(service, title: str, description: str) -> str:
+    """Id of the channel's playlist with this exact title, creating it (public) if missing."""
+    page_token = None
+    while True:
+        resp = service.playlists().list(
+            part="snippet", mine=True, maxResults=50, pageToken=page_token
+        ).execute()
+        for item in resp.get("items", []):
+            if item["snippet"]["title"] == title:
+                return item["id"]
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    created = service.playlists().insert(
+        part="snippet,status",
+        body={
+            "snippet": {"title": title, "description": description, "defaultLanguage": "en"},
+            "status": {"privacyStatus": "public"},
+        },
+    ).execute()
+    return created["id"]
+
+
+def _add_to_champion_playlist(service, media_file: sqlite3.Row, video_id: str) -> None:
+    """File a full game into its champion's playlist (created on first use). Playlists turn a
+    one-off viewer into a session: YouTube chains playlist videos in Up Next, and a "<Champ>
+    Full Games" playlist is exactly what a champion-curious searcher binges."""
+    from clipfarm.riot.champion_names import display_name
+
+    champion = media_file["champion"]
+    if not champion:
+        return
+    champ = display_name(champion)
+    playlist_id = _find_or_create_playlist(
+        service,
+        f"{champ} Full Games",
+        f"Full {champ} ranked games, unedited. New games added automatically.",
+    )
+    service.playlistItems().insert(
+        part="snippet",
+        body={
+            "snippet": {
+                "playlistId": playlist_id,
+                "resourceId": {"kind": "youtube#video", "videoId": video_id},
+            }
+        },
+    ).execute()
+
+
 def publish(media_file: sqlite3.Row) -> str:
     """Uploads a full game (as-is) or a clip (converted to vertical, tagged as a Short).
     Returns the new YouTube video id. Raises on quota exhaustion or upload failure."""
@@ -185,5 +234,14 @@ def publish(media_file: sqlite3.Row) -> str:
                 video_id,
                 exc_info=True,
             )
+
+    # File full games into their champion's playlist (session-building; see the helper).
+    # Cosmetic like the thumbnail: a playlist hiccup must never fail a finished upload.
+    if not is_clip:
+        try:
+            _add_to_champion_playlist(service, media_file, video_id)
+        except Exception:  # noqa: BLE001
+            logger.warning("Playlist filing failed for %s -- video itself published fine.",
+                           video_id, exc_info=True)
 
     return video_id

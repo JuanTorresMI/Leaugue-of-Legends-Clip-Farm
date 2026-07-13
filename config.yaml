@@ -57,6 +57,10 @@ editing:
   # Small translucent channel handle at the bottom of every clip -- brand recall for viewers
   # who never open the description. Empty string ("") disables it.
   watermark_text: "@YourChannel"
+  # Subscribe ask flashed over the final seconds of every clip, right after the payoff --
+  # the only moment a Shorts viewer will ever act on it. Empty string ("") disables it.
+  subscribe_cta_text: "SUBSCRIBE FOR MORE"
+  subscribe_cta_seconds: 2.5
 
 youtube:
   default_full_game_visibility: public

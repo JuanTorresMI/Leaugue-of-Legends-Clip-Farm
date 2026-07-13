@@ -107,9 +107,44 @@ def test_claim_reprocess_reports_api_error(monkeypatch):
     assert committed == {}
 
 
+def test_claim_reprocess_treats_transient_api_error_as_error(monkeypatch):
+    # A rate-limited (429/5xx) attempt parks as awaiting_match with a "Transient..." message --
+    # it is NOT a real miss, so the caller must not mark the row permanently claim-checked.
+    committed = _fake_load(monkeypatch)
+    monkeypatch.setattr(pipeline, "_derive_fields", lambda *a: {
+        "status": "awaiting_match", "account": "m",
+        "error_message": "Transient Riot API error (HTTP 429) -- will retry automatically.",
+    })
+    assert pipeline.claim_reprocess(1) == "error"
+    assert committed == {}
+
+
 def test_claim_reprocess_handles_missing_file(monkeypatch):
     _fake_load(monkeypatch, exists=False)
     assert pipeline.claim_reprocess(1) == "gone"
+
+
+def test_derive_fields_parks_transient_http_errors(monkeypatch, tmp_path):
+    # A Riot 429 during processing must land in 'awaiting_match' (the rematch sweep's queue),
+    # never terminal 'failed' -- a terminal 'failed' row is invisible to every sweep.
+    import requests
+
+    from clipfarm.paths import MediaKind
+
+    resp = requests.Response()
+    resp.status_code = 429
+
+    class _Client:
+        riot_id = "AltTwo#NA1"
+
+        def get_rank(self):
+            raise requests.HTTPError("429 Client Error: Too Many Requests", response=resp)
+
+    monkeypatch.setattr(pipeline.dedup, "file_content_hash", lambda p: None)
+    parsed = SimpleNamespace(kind=MediaKind.FULL_GAME, recorded_at=None, thumbnail_path=None)
+    fields = pipeline._derive_fields(tmp_path / "game.mp4", parsed, _Client())
+    assert fields["status"] == "awaiting_match"
+    assert "Transient" in fields["error_message"]
 
 
 # --- stale-metadata detection: title's rank disagrees with the stored rank ------------------

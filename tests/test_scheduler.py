@@ -167,19 +167,35 @@ def test_clip_and_full_game_tracks_are_independent(temp_db, publish_calls, monke
     assert scheduler.run_once(_today_at(13)) == clip  # clip slot still available
 
 
-def test_retry_failed_autoposts_backfills(temp_db, publish_calls, monkeypatch):
+def _seed_failed_target(conn, mid, platform="youtube", *, age="-1 hour", retry_count=0):
+    db.upsert_publish_target(conn, mid, platform, selected=True)
+    db.set_publish_target_status(conn, mid, platform, "failed", error_message="blip")
+    conn.execute(
+        "UPDATE publish_targets SET updated_at = datetime('now', ?), retry_count = ? "
+        "WHERE media_file_id = ? AND platform = ?",
+        (age, retry_count, mid, platform),
+    )
+
+
+def test_retry_backfills_failed_autopost(temp_db, publish_calls, monkeypatch):
     _use_settings(monkeypatch)
     with db.get_conn() as conn:
         mid = _seed_clip(conn, streak=3)
-        db.upsert_publish_target(conn, mid, "youtube", selected=True)
         db.record_autopost(conn, mid, "youtube", "clip")
-        db.set_publish_target_status(conn, mid, "youtube", "failed", error_message="blip")
-        # Backdate so it's outside the "don't hammer" window and gets picked up.
-        conn.execute(
-            "UPDATE publish_targets SET updated_at = datetime('now', '-1 hour') WHERE media_file_id = ?", (mid,)
-        )
-    assert scheduler.retry_failed_autoposts() == 1
+        _seed_failed_target(conn, mid, "youtube")
+    assert scheduler.retry_failed_publishes() == 1
     assert (mid, "youtube") in publish_calls
+
+
+def test_retry_covers_manually_approved_failures(temp_db, publish_calls, monkeypatch):
+    # An Approve click means "post this" -- a failed manual approval must retry on its own,
+    # even on a platform the autopost never logged (the old autopost_log join missed these).
+    _use_settings(monkeypatch)
+    with db.get_conn() as conn:
+        mid = _seed_clip(conn, streak=3, status="approved")
+        _seed_failed_target(conn, mid, "facebook")
+    assert scheduler.retry_failed_publishes() == 1
+    assert (mid, "facebook") in publish_calls
 
 
 def test_retry_skips_recent_failures(temp_db, publish_calls, monkeypatch):
@@ -187,6 +203,45 @@ def test_retry_skips_recent_failures(temp_db, publish_calls, monkeypatch):
     with db.get_conn() as conn:
         mid = _seed_clip(conn, streak=3)
         db.upsert_publish_target(conn, mid, "youtube", selected=True)
-        db.record_autopost(conn, mid, "youtube", "clip")
         db.set_publish_target_status(conn, mid, "youtube", "failed")  # updated_at = now -> too recent
-    assert scheduler.retry_failed_autoposts() == 0  # don't hammer a just-failed upload
+    assert scheduler.retry_failed_publishes() == 0  # don't hammer a just-failed upload
+
+
+def test_retry_respects_lifetime_cap(temp_db, publish_calls, monkeypatch):
+    _use_settings(monkeypatch)
+    with db.get_conn() as conn:
+        mid = _seed_clip(conn, streak=3, status="approved")
+        _seed_failed_target(conn, mid, "youtube", retry_count=8)  # budget exhausted
+    assert scheduler.retry_failed_publishes(max_retries=8) == 0
+
+
+def test_retry_paced_oldest_first(temp_db, publish_calls, monkeypatch):
+    # A backlog drains as a drip: `limit` per tick, oldest failure first.
+    _use_settings(monkeypatch)
+    with db.get_conn() as conn:
+        old = _seed_clip(conn, match="NA1_OLD", streak=3, status="approved")
+        new = _seed_clip(conn, match="NA1_NEW", streak=3, status="approved")
+        _seed_failed_target(conn, old, "youtube", age="-3 days")
+        _seed_failed_target(conn, new, "youtube", age="-1 hour")
+    assert scheduler.retry_failed_publishes(limit=1) == 1
+    assert publish_calls == [(old, "youtube")]
+
+
+def test_failed_publish_increments_retry_count(temp_db, monkeypatch):
+    # publish_job counts each failed attempt against the auto-retry budget.
+    from clipfarm.jobs import publish_job
+
+    monkeypatch.setattr(
+        "clipfarm.publishers.registry.get",
+        lambda platform: SimpleNamespace(publish=lambda mf: (_ for _ in ()).throw(RuntimeError("boom"))),
+    )
+    with db.get_conn() as conn:
+        mid = _seed_clip(conn, streak=3, status="approved")
+        db.upsert_publish_target(conn, mid, "youtube", selected=True)
+    publish_job._run(mid)
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT status, retry_count FROM publish_targets WHERE media_file_id = ?", (mid,)
+        ).fetchone()
+    assert row["status"] == "failed"
+    assert row["retry_count"] == 1

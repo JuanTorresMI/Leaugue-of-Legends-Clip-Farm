@@ -232,25 +232,28 @@ def run_full_game_once(now_local: datetime | None = None) -> int | None:
     return media_file_id
 
 
-def retry_failed_autoposts(older_than_min: int = 30, younger_than_hours: int = 48) -> int:
-    """Backfill missed uploads: re-submit auto-posts that FAILED (e.g. a transient error) as long
-    as their source file still exists. Bounded to a time window so a permanently-bad item isn't
-    retried forever. Returns how many were re-submitted."""
+def retry_failed_publishes(older_than_min: int = 30, max_retries: int = 8, limit: int = 2) -> int:
+    """Backfill missed uploads: re-submit publish targets that FAILED (quota hit, transient API
+    error, a crash mid-upload) while their source file still exists. Covers auto-posted *and*
+    manually-approved items -- approving means "post this", so a failure must eventually retry
+    on its own. Each target gets at most `max_retries` lifetime attempts (no infinite churn on
+    a permanently-bad item), and at most `limit` are re-submitted per tick so a backlog drains
+    as a drip, not a burst. Returns how many were re-submitted."""
     with db.get_conn() as conn:
-        targets = db.failed_autopost_targets(conn, older_than_min, younger_than_hours)
+        targets = db.retryable_failed_targets(conn, older_than_min, max_retries, limit)
     if not targets:
         return 0
     from clipfarm.jobs.publish_job import submit_publish_job
 
     for t in targets:
-        logger.info("Backfilling missed auto-post: media_file %s -> %s", t["media_file_id"], t["platform"])
+        logger.info("Retrying failed publish: media_file %s -> %s", t["media_file_id"], t["platform"])
         submit_publish_job(t["media_file_id"], only_platform=t["platform"])
     return len(targets)
 
 
 def tick(now_local: datetime | None = None) -> None:
     """One full scheduler pass: backfill any missed uploads, then the clip and long-form tracks."""
-    retry_failed_autoposts()
+    retry_failed_publishes()
     run_once(now_local)
     run_full_game_once(now_local)
 

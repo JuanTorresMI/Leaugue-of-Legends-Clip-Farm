@@ -138,6 +138,13 @@ def _render_watermark_png(text: str, out_path: Path) -> Path | None:
     )
 
 
+def _render_subscribe_png(text: str, out_path: Path) -> Path | None:
+    """The subscribe ask flashed over a clip's final seconds. Same upper-third slot as the hook
+    caption (they never show at the same time: hook = first seconds, this = last seconds), a
+    notch smaller so the payoff moment underneath stays visible."""
+    return _render_text_png(text, out_path, y_frac=0.16, max_size=96, min_size=48, stroke=6)
+
+
 def pick_music() -> Path | None:
     """A random track from the music folder, or None if the folder is empty/missing."""
     music_dir = get_settings().editing.music_dir
@@ -237,6 +244,22 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
             watermark_index = next_index
             next_index += 1
 
+    # Optional subscribe ask over the final seconds. Needs a known duration (the enable window
+    # is anchored to the end) and a clip long enough that it can't overlap the hook caption.
+    cta_png: Path | None = None
+    cta_index: int | None = None
+    cta_start = 0.0
+    if (
+        ed.subscribe_cta_text.strip()
+        and duration > ed.hook_seconds + ed.subscribe_cta_seconds + 3
+    ):
+        cta_png = _render_subscribe_png(ed.subscribe_cta_text.strip(), output_path.with_suffix(".cta.png"))
+        if cta_png is not None:
+            cta_start = duration - ed.subscribe_cta_seconds
+            inputs += ["-loop", "1", "-t", f"{duration:.2f}", "-i", str(cta_png)]
+            cta_index = next_index
+            next_index += 1
+
     # --- video chain: blurred bg + crisp fg, then caption/watermark overlays, then fades ---
     base = (
         f"[0:v]{_VERTICAL_BG}[bg];"
@@ -246,6 +269,8 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
     overlays: list[str] = []
     if caption_index is not None:
         overlays.append(f"[{caption_index}:v]overlay=0:0:enable='lte(t,{ed.hook_seconds:.2f})'")
+    if cta_index is not None:
+        overlays.append(f"[{cta_index}:v]overlay=0:0:enable='gte(t,{cta_start:.2f})'")
     if watermark_index is not None:
         overlays.append(f"[{watermark_index}:v]overlay=0:0")
 
@@ -287,4 +312,6 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
             caption_png.unlink(missing_ok=True)
         if watermark_png is not None:
             watermark_png.unlink(missing_ok=True)
+        if cta_png is not None:
+            cta_png.unlink(missing_ok=True)
     return output_path

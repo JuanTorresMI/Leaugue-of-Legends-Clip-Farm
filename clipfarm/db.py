@@ -135,6 +135,7 @@ _MIGRATION_COLUMNS = [
     ("media_files", "title_variant", "TEXT"),       # which A/B title style the draft used (CTR experiment)
     ("media_files", "claim_checked_account", "TEXT"),  # last account we tried to claim this row for (see claim sweep)
     ("autopost_log", "kind", "TEXT DEFAULT 'clip'"),  # separate clip vs full-game cadence tracks
+    ("publish_targets", "retry_count", "INTEGER DEFAULT 0"),  # failed attempts so far (caps auto-retries)
 ]
 
 
@@ -440,24 +441,41 @@ def autopost_last_fired(conn: sqlite3.Connection, platform: str, kind: str = "cl
     return row["t"] if row and row["t"] else None
 
 
-def failed_autopost_targets(
-    conn: sqlite3.Connection, older_than_min: int, younger_than_hours: int
+def retryable_failed_targets(
+    conn: sqlite3.Connection, older_than_min: int, max_retries: int, limit: int
 ) -> list[sqlite3.Row]:
-    """Auto-posted targets that failed and are worth backfilling: source still on disk, last try
-    between `older_than_min` ago (don't hammer) and `younger_than_hours` ago (give up eventually)."""
+    """Failed publish targets worth auto-retrying. Covers auto-posted AND manually-approved
+    items -- an Approve click means "post this", so its failure must eventually retry without
+    anyone noticing and pressing Retry. Conditions: still selected, item still meant to go out
+    (approved/ready, not rejected), source still on disk, last attempt at least `older_than_min`
+    ago (don't hammer), and under the lifetime `max_retries` cap (a permanently-broken item
+    can't churn forever -- its Retry button still works). Oldest failures first, at most `limit`
+    rows, so a backlog drains as a drip instead of a burst."""
     return conn.execute(
         """
-        SELECT DISTINCT pt.media_file_id, pt.platform
+        SELECT pt.media_file_id, pt.platform
         FROM publish_targets pt
-        JOIN autopost_log a ON a.media_file_id = pt.media_file_id AND a.platform = pt.platform
         JOIN media_files m ON m.id = pt.media_file_id
         WHERE pt.status = 'failed'
+          AND pt.selected = 1
+          AND m.status IN ('approved', 'ready')
           AND m.source_deleted_at IS NULL
+          AND COALESCE(pt.retry_count, 0) < ?
           AND pt.updated_at <= datetime('now', ?)
-          AND pt.updated_at >= datetime('now', ?)
+        ORDER BY pt.updated_at
+        LIMIT ?
         """,
-        (f"-{older_than_min} minutes", f"-{younger_than_hours} hours"),
+        (max_retries, f"-{older_than_min} minutes", limit),
     ).fetchall()
+
+
+def bump_publish_retry_count(conn: sqlite3.Connection, media_file_id: int, platform: str) -> None:
+    """Count a failed publish attempt against this target's auto-retry budget."""
+    conn.execute(
+        "UPDATE publish_targets SET retry_count = COALESCE(retry_count, 0) + 1 "
+        "WHERE media_file_id = ? AND platform = ?",
+        (media_file_id, platform),
+    )
 
 
 # --- file lifecycle -------------------------------------------------------------------------

@@ -177,6 +177,8 @@ def publish(media_file: sqlite3.Row) -> str:
     video_path = Path(media_file["path"])
     hashtags = json.loads(media_file["draft_hashtags"]) if media_file["draft_hashtags"] else []
     description = media_file["draft_description"] or ""
+    # Drafts are written YouTube-first; on a Facebook Page the ask is Follow, not Subscribe.
+    description = description.replace("SUBSCRIBE", "FOLLOW")
     if hashtags:
         description = f"{description}\n\n{' '.join(hashtags)}"
 

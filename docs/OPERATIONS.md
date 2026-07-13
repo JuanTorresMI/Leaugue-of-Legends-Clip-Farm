@@ -50,6 +50,8 @@ nothing to do, and only reprocesses genuinely-inconsistent, not-yet-published cl
 |---|---|---|
 | Videos aren't posting to Facebook | Facebook not enabled, or `watch` on old code, or Page token expired | Enable Facebook in the dashboard; **restart `watch`**; `check-facebook-token`. Catch up already-posted clips with `backpost-facebook`. |
 | Facebook target `failed` with `WinError 32` / "file used by another process" | Old code: concurrent YouTube+Facebook jobs raced on the shared render | Fixed in code (per-clip render lock). **Restart `watch`**; failed items are retried automatically by the backfill sweep. |
+| An approved item failed to upload and just sits there | Pre-fix backfill only retried recent *auto-posted* YouTube failures | Fixed in code: every failed selected target retries automatically (any platform, approved or auto-posted), paced 2/tick, up to 8 lifetime attempts. Past 8, use the dashboard **Retry** button (it ignores the cap). |
+| Items stuck `failed` with a `429 Too Many Requests` error | Pre-fix code treated a transient Riot rate-limit as permanent | Fixed in code: 429/5xx/network errors now park as `awaiting_match` and the rematch sweep retries them. Old stuck rows: reprocess via the dashboard Regenerate button. |
 | A clip shows the wrong rank (e.g. Platinum game says "Emerald") | Clip processed while the wrong account was selected | `python -m clipfarm.cli repair-metadata` (regenerates title + thumbnail). Prevented going forward by the owner-attribution logic. |
 | Clips from an account stay `awaiting_match`/generic after switching to it | They were processed under a different account and are stranded | Switch to the owning account (or hit manual scan) with a **valid Riot key** — the claim pass adopts the ones that match. |
 | Lots of items stuck `awaiting_match` | Riot key expired, or games genuinely not finished/indexed yet | `check-riot-key`; if valid, they'll match on the next sweep once the games are in Riot's history. |
@@ -71,6 +73,11 @@ enough:
   heals stranded clips without stealing another account's, and without re-hammering Riot.
 - **The dedup ledger** makes double-posting impossible regardless of retries/backfills.
 - **`video_stats` is append-only**, so analytics history survives source deletion and repairs.
+- **Failed uploads self-heal**: every failed selected target (any platform, manual or auto)
+  is retried by the scheduler — paced, capped at 8 lifetime attempts — so "approved but never
+  posted" can't happen silently.
+- **Transient Riot errors are never terminal**: a 429/5xx parks the row for the rematch sweep
+  instead of failing it, so a burst of games processed at once can't strand recordings.
 
 ## Manual maintenance commands (reference)
 

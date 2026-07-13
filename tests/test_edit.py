@@ -53,10 +53,7 @@ def test_render_watermark_png(tmp_path, monkeypatch):
     assert out is not None and out.exists() and out.stat().st_size > 0
 
 
-def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
-    """The watermark PNG becomes a bounded looped input overlaid for the whole clip."""
-    captured = {}
-
+def _edit_settings(tmp_path, **overrides):
     class _Ed:
         enabled = True
         music_dir = tmp_path / "no-music"
@@ -66,7 +63,12 @@ def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
         fade_out_seconds = 0.0
         hook_caption = False
         hook_seconds = 2.5
-        watermark_text = "@YourChannel"
+        watermark_text = ""
+        subscribe_cta_text = ""
+        subscribe_cta_seconds = 2.5
+
+    for key, value in overrides.items():
+        setattr(_Ed, key, value)
 
     class _Ascent:
         ffmpeg_path = "ffmpeg"
@@ -76,7 +78,14 @@ def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
         ascent = _Ascent()
         project_root = tmp_path
 
-    monkeypatch.setattr(edit, "get_settings", lambda: _Settings())
+    return _Settings()
+
+
+def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
+    """The watermark PNG becomes a bounded looped input overlaid for the whole clip."""
+    captured = {}
+    monkeypatch.setattr(edit, "get_settings",
+                        lambda: _edit_settings(tmp_path, watermark_text="@YourChannel"))
     monkeypatch.setattr(edit, "duration_seconds", lambda p: 34.3)
 
     def fake_run(args):
@@ -90,6 +99,32 @@ def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
     assert "[1:v]overlay=0:0" in fc  # watermark input overlaid over the whole clip
     assert "-t" in args and "34.30" in args  # looped PNG bounded to the clip duration
     assert "fade" not in fc  # fades are off -> seamless loop
+
+
+def test_prepare_clip_flashes_subscribe_cta_at_the_end(tmp_path, monkeypatch):
+    """The subscribe ask is enabled only over the clip's final subscribe_cta_seconds."""
+    captured = {}
+    monkeypatch.setattr(edit, "get_settings",
+                        lambda: _edit_settings(tmp_path, subscribe_cta_text="SUBSCRIBE FOR MORE"))
+    monkeypatch.setattr(edit, "duration_seconds", lambda p: 34.3)
+    monkeypatch.setattr(edit, "_run", lambda args: captured.setdefault("args", args))
+
+    edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4")
+    fc = captured["args"][captured["args"].index("-filter_complex") + 1]
+    assert "overlay=0:0:enable='gte(t,31.80)'" in fc  # 34.3 - 2.5: only the final seconds
+
+
+def test_prepare_clip_skips_cta_on_short_clips(tmp_path, monkeypatch):
+    """Too short for hook + CTA to coexist -> no subscribe overlay at all."""
+    captured = {}
+    monkeypatch.setattr(edit, "get_settings",
+                        lambda: _edit_settings(tmp_path, subscribe_cta_text="SUBSCRIBE FOR MORE"))
+    monkeypatch.setattr(edit, "duration_seconds", lambda p: 6.0)  # under 2.5 + 2.5 + 3
+    monkeypatch.setattr(edit, "_run", lambda args: captured.setdefault("args", args))
+
+    edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4")
+    fc = captured["args"][captured["args"].index("-filter_complex") + 1]
+    assert "gte(t," not in fc
 
 
 def test_prepared_clip_renders_once_under_concurrency(tmp_path, monkeypatch):

@@ -6,6 +6,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+import requests
+
 from clipfarm import db
 from clipfarm.config import get_settings
 from clipfarm.jobs.models import DraftMetadata, MatchContext
@@ -220,6 +222,19 @@ def _derive_fields(path: Path, parsed, client) -> dict:
         logger.warning("Riot key expired while processing %s", path)
         fields["status"] = "needs_attention"
         fields["error_message"] = str(exc)
+    except requests.RequestException as exc:
+        # Riot rate limits (429), server hiccups (5xx), and network drops are TRANSIENT: park the
+        # row for the rematch sweep instead of failing terminally -- a burst of games processed
+        # at once must never permanently strand a recording. Other HTTP errors are real failures.
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if status_code is None or status_code == 429 or status_code >= 500:
+            logger.warning("Transient Riot/API error for %s (HTTP %s); will retry: %s", path, status_code, exc)
+            fields["status"] = "awaiting_match"
+            fields["error_message"] = f"Transient Riot API error (HTTP {status_code}) -- will retry automatically."
+        else:
+            logger.exception("Failed to process %s", path)
+            fields["status"] = "failed"
+            fields["error_message"] = str(exc)
     except Exception as exc:  # noqa: BLE001 -- must not crash the watcher loop on a bad file
         logger.exception("Failed to process %s", path)
         fields["status"] = "failed"
@@ -305,4 +320,6 @@ def claim_reprocess(media_file_id: int) -> str:
     # don't permanently mark a row that only failed because the key was down or Riot 5xx'd.
     if fields.get("status") in ("failed", "needs_attention"):
         return "error"
+    if str(fields.get("error_message") or "").startswith("Transient Riot API error"):
+        return "error"  # rate-limited/5xx mid-attempt -- not a real miss, retry next sweep
     return "no_match"

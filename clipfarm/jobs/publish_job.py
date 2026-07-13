@@ -81,6 +81,7 @@ def _run(media_file_id: int, only_platform: str | None = None) -> None:
                 db.set_publish_target_status(
                     conn, media_file_id, platform, "failed", error_message=str(exc)[:500]
                 )
+                db.bump_publish_retry_count(conn, media_file_id, platform)
         else:
             with db.get_conn() as conn:
                 db.finalize_reserved_content(conn, platform, keys, media_file_id, platform_video_id)
