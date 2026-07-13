@@ -122,6 +122,7 @@ def due_status(settings: autopost.AutopostSettings | None = None) -> dict:
     """Snapshot for the dashboard: posted-today, daily caps, and next slots for both tracks."""
     settings = settings or autopost.current()
     now_local = datetime.now()
+    clip_hours = autopost.effective_post_hours(settings, now_local.date())
     clip_targets = enabled_targets("clip") or ["youtube"]
     fg_targets = enabled_targets("full_game") or ["youtube"]
     with db.get_conn() as conn:
@@ -131,9 +132,10 @@ def due_status(settings: autopost.AutopostSettings | None = None) -> dict:
         )
     return {
         "posted_today": clip_posted,
-        "daily_cap": len(settings.post_hours),
-        "next_slot_hour": _next_slot_hour(settings.post_hours, now_local),
-        "post_hours": settings.post_hours,
+        "daily_cap": len(clip_hours),
+        "next_slot_hour": _next_slot_hour(clip_hours, now_local),
+        "post_hours": clip_hours,  # today's ACTUAL slots (rotates daily in explore mode)
+        "schedule_mode": settings.schedule_mode,
         "platforms": clip_targets,  # where clips actually go (all enabled platforms)
         "full_game": {
             "posted_today": fg_posted,
@@ -159,13 +161,16 @@ def run_once(now_local: datetime | None = None) -> int | None:
         return None
     primary = targets[0]  # YouTube: the always-enabled anchor for spacing/daily-count bookkeeping
 
+    # Today's slots: fixed post_hours, or the posting-time experiment's daily rotation.
+    post_hours = autopost.effective_post_hours(settings, now_local.date())
+
     with _TICK_LOCK:
         with db.get_conn() as conn:
-            slots_due = _slots_due(settings.post_hours, now_local)
+            slots_due = _slots_due(post_hours, now_local)
             if slots_due == 0:
                 return None
             posted_today = db.autopost_count_today(conn, primary, now_local.date().isoformat(), "clip")
-            if posted_today >= min(slots_due, len(settings.post_hours)):
+            if posted_today >= min(slots_due, len(post_hours)):
                 return None
             if not _spacing_ok(conn, primary, "clip", now_utc, settings.min_gap_minutes):
                 return None

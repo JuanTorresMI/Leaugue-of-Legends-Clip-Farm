@@ -135,6 +135,20 @@ def test_only_current_account(temp_db, publish_calls, monkeypatch):
     assert scheduler.run_once(_today_at(13)) is None
 
 
+def test_run_once_follows_explore_rotation(temp_db, publish_calls, monkeypatch):
+    # In explore mode the scheduler fires on today's rotated slots, not settings.post_hours.
+    from clipfarm.autopost import explore_hours_for
+
+    s = _use_settings(monkeypatch, schedule_mode="explore", post_hours=[12, 17, 21],
+                      explore_window=[11, 23])
+    with db.get_conn() as conn:
+        _seed_clip(conn, streak=5)
+    first_slot = explore_hours_for(s, datetime.now().date())[0]
+    if first_slot > 0:
+        assert scheduler.run_once(_today_at(first_slot - 1)) is None  # before today's first slot
+    assert scheduler.run_once(_today_at(first_slot)) is not None      # fires exactly on it
+
+
 def _seed_full_game(conn, *, match="NA1_G", account="Me#NA1"):
     mid = db.insert_media_file(conn, f"C:/games/{match}.mp4", "full_game", "2026-07-04T20:00:00")
     db.update_media_file(conn, mid, riot_match_id=match, account=account, status="ready", draft_title="game")

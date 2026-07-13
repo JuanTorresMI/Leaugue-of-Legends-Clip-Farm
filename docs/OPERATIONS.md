@@ -84,6 +84,7 @@ enough:
 | Command | When |
 |---|---|
 | `python -m clipfarm.cli watch` | Normal operation (dashboard + workers). Restart after code changes. |
+| Auto-post → Schedule → **Explore** | Run the posting-time experiment: slots rotate through the test window daily. After 2–4 weeks, lock in the winners via the metrics page's Apply-recommended button (returns the schedule to fixed). |
 | `check-riot-key` / `check-facebook-token` | Confirm credentials before a session or a repair. |
 | `repair-metadata` | After noticing any rank/title drift, or as a periodic sanity pass. |
 | `backpost-facebook` | Deliberate one-time catch-up of clips already on YouTube but not Facebook. |

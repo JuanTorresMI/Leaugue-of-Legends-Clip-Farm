@@ -259,9 +259,18 @@ function renderAutopostStatus(data) {
     `${st.posted_today ?? 0}/${st.daily_cap ?? 0} posted today`,
     `next slot ${nextLabel}`,
   ];
+  if (st.schedule_mode === "explore") {
+    // Surface the experiment: today's rotated slots, so it never looks like the schedule broke.
+    bits.push(`🧪 exploring — today: ${(st.post_hours || []).map((h) => `${h}:00`).join(", ")}`);
+  }
   document.getElementById("autopost-status").textContent = data.enabled
     ? `ON · ${bits.join(" · ")}`
     : "Off — clips wait for manual Approve.";
+}
+
+function syncAutopostModeUI() {
+  const explore = document.getElementById("autopost-mode").value === "explore";
+  document.getElementById("autopost-window-label").classList.toggle("hidden", !explore);
 }
 
 async function loadAutopost() {
@@ -274,11 +283,14 @@ async function loadAutopost() {
     // Don't stomp the inputs while the user is editing the open form.
     if (document.getElementById("autopost-form").classList.contains("hidden")) {
       document.getElementById("autopost-enabled").checked = data.enabled;
+      document.getElementById("autopost-mode").value = data.schedule_mode || "fixed";
       document.getElementById("autopost-hours").value = (data.post_hours || []).join(", ");
+      document.getElementById("autopost-window").value = (data.explore_window || [11, 23]).join("-");
       document.getElementById("autopost-min-streak").value = data.min_kill_streak;
       document.getElementById("autopost-cap").value = data.per_game_cap;
       document.getElementById("autopost-fg-enabled").checked = data.full_game_enabled;
       document.getElementById("autopost-fg-hours").value = (data.full_game_hours || []).join(", ");
+      syncAutopostModeUI();
     }
     renderAutopostStatus(data);
   } catch (e) {
@@ -292,6 +304,7 @@ function toggleAutopostForm(show) {
 
 document.getElementById("autopost-btn").addEventListener("click", () => toggleAutopostForm(true));
 document.getElementById("autopost-cancel").addEventListener("click", () => toggleAutopostForm(false));
+document.getElementById("autopost-mode").addEventListener("change", syncAutopostModeUI);
 
 document.getElementById("autopost-save").addEventListener("click", async () => {
   const hours = document
@@ -304,9 +317,17 @@ document.getElementById("autopost-save").addEventListener("click", async () => {
     .value.split(",")
     .map((h) => parseInt(h.trim(), 10))
     .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  // "11-23" (or "11,23") -> [11, 23]; anything unparsable falls back to the default window.
+  const windowParts = document
+    .getElementById("autopost-window")
+    .value.split(/[-,]/)
+    .map((h) => parseInt(h.trim(), 10))
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
   const body = {
     enabled: document.getElementById("autopost-enabled").checked,
+    schedule_mode: document.getElementById("autopost-mode").value,
     post_hours: hours,
+    explore_window: windowParts.length === 2 ? windowParts : [11, 23],
     min_kill_streak: parseInt(document.getElementById("autopost-min-streak").value, 10) || 1,
     per_game_cap: parseInt(document.getElementById("autopost-cap").value, 10) || 3,
     full_game_enabled: document.getElementById("autopost-fg-enabled").checked,

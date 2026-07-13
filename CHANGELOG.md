@@ -9,6 +9,21 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ## 2026-07-13
 
+### Added — posting-time experiment (explore schedule mode)
+- The auto-post schedule now has two modes (dashboard → Auto-post → Schedule):
+  **Fixed hours** posts at exactly `post_hours` every day (unchanged behaviour, still the
+  default). **Explore (test times)** keeps the same number of posts per day but rotates the
+  slots through a configurable test window (default 11:00–23:00) on a deterministic daily
+  cycle — spread across the day like a normal schedule, different hours tomorrow, full window
+  coverage within ~a week. That variation is what feeds the metrics page's hour-performance
+  table real samples; a fixed schedule can only ever learn about its own 3 hours.
+- The dashboard status line shows today's rotated slots (`🧪 exploring — today: 13:00, 16:00,
+  20:00`), and the metrics page's **Apply recommended** button now also flips the schedule
+  back to fixed — run the experiment for 2–4 weeks, then one click locks in the winning hours.
+- Implementation: `autopost.explore_hours_for` / `effective_post_hours` (pure, date-seeded),
+  used by `scheduler.run_once` + `due_status`; settings fields `schedule_mode` /
+  `explore_window` flow through the existing `/api/autopost` endpoints.
+
 ### Fixed — failed uploads now actually self-heal
 - **The retry backfill never worked for Facebook (or any non-YouTube platform).** It joined
   failed targets against `autopost_log` on *platform*, but auto-posts only log their primary

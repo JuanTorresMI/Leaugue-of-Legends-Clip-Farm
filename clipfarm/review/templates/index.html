@@ -55,8 +55,18 @@
       <button id="autopost-btn" title="Automatically drip-post your best clips on a schedule">Auto-post: …</button>
       <div id="autopost-form" class="account-form hidden">
         <label class="fb-enable"><input type="checkbox" id="autopost-enabled" /> Enable auto-posting</label>
-        <label title="Local hours to post at (comma-separated, 0-23). One post per slot = your daily cap.">
+        <label title="Fixed: post at exactly the hours below every day. Explore: rotate through the test window day by day to LEARN which hours perform best (tracked on the Metrics page), then lock the winners in with its Apply-recommended button.">
+          Schedule
+          <select id="autopost-mode">
+            <option value="fixed">Fixed hours</option>
+            <option value="explore">Explore (test times)</option>
+          </select>
+        </label>
+        <label id="autopost-hours-label" title="Local hours to post at (comma-separated, 0-23). One post per slot = your daily cap. In Explore mode only the COUNT matters (posts per day).">
           Post hours <input id="autopost-hours" placeholder="12, 17, 21" autocomplete="off" spellcheck="false" />
+        </label>
+        <label id="autopost-window-label" class="hidden" title="Explore mode rotates today's slots through this hour range (local, inclusive).">
+          Test window <input id="autopost-window" placeholder="11-23" autocomplete="off" spellcheck="false" />
         </label>
         <label title="Skip clips weaker than this. 1 = allow solo kills; 2 = doubles and up only.">
           Min kill streak <input id="autopost-min-streak" type="number" min="1" max="5" />

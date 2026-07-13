@@ -291,7 +291,7 @@ document.getElementById("apply-hours").addEventListener("click", async () => {
   const res = await fetch("/api/autopost/apply-recommended", { method: "POST" });
   if (res.ok) {
     const data = await res.json();
-    note.textContent = `Auto-post hours set to ${data.post_hours.map((h) => `${h}:00`).join(", ")} ✓`;
+    note.textContent = `Auto-post locked to ${data.post_hours.map((h) => `${h}:00`).join(", ")} (fixed schedule) ✓`;
   } else {
     note.textContent = (await res.json().catch(() => ({}))).detail || "Could not apply.";
   }

@@ -170,6 +170,8 @@ def _autopost_payload(s) -> dict:
     return {
         "enabled": s.enabled,
         "post_hours": s.post_hours,
+        "schedule_mode": s.schedule_mode,
+        "explore_window": s.explore_window,
         "min_kill_streak": s.min_kill_streak,
         "per_game_cap": s.per_game_cap,
         # Where auto-posts actually go: every enabled platform (not a stale hand-kept list).
@@ -183,6 +185,8 @@ def _autopost_payload(s) -> dict:
 class AutopostRequest(BaseModel):
     enabled: bool | None = None
     post_hours: list[int] | None = None
+    schedule_mode: str | None = None
+    explore_window: list[int] | None = None
     min_kill_streak: int | None = None
     per_game_cap: int | None = None
     platforms: list[str] | None = None
@@ -209,7 +213,9 @@ def update_autopost(req: AutopostRequest) -> dict:
 
 @router.post("/api/autopost/apply-recommended")
 def apply_recommended_hours() -> dict:
-    """Set the clip post-hours to the data-driven best times from the metrics analysis."""
+    """Set the clip post-hours to the data-driven best times from the metrics analysis.
+    Also returns the schedule to fixed mode: applying a winner is how the posting-time
+    experiment ends -- from here on, post at the hours the data picked."""
     from clipfarm import autopost
     from clipfarm.metrics.analysis import recommended_hours
 
@@ -217,9 +223,9 @@ def apply_recommended_hours() -> dict:
     if not hours:
         raise HTTPException(status_code=400, detail="Not enough performance data yet to recommend times.")
     s = autopost.current()
-    updated = autopost.AutopostSettings(**{**s.__dict__, "post_hours": hours})
+    updated = autopost.AutopostSettings(**{**s.__dict__, "post_hours": hours, "schedule_mode": "fixed"})
     autopost.save(updated)
-    logger.info("Applied recommended post hours: %s", hours)
+    logger.info("Applied recommended post hours: %s (schedule mode -> fixed)", hours)
     return _autopost_payload(autopost.current())
 
 
