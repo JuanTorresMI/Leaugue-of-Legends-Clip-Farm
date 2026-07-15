@@ -12,8 +12,9 @@ the *workflow* side of them. See [CHANGELOG.md](../CHANGELOG.md) for what change
    process. It does **not** hot-reload. If you change code (or I do) and don't restart, the old
    behaviour keeps running — nearly every "it's still broken after the fix" moment traced back to a
    stale `watch` process. Two `watch` processes at once means two schedulers/pollers competing (and
-   only one can bind port 8000) — kill them all and start a single fresh one. On Windows:
-   `Get-Process python | Stop-Process` then relaunch `python -m clipfarm.cli watch`.
+   only one can bind port 8000). **Easiest way: double-click `ClipFarm.bat`** (or the LeagueClipFarm
+   Desktop shortcut) — it stops any running instance, starts one fresh, and opens the dashboard.
+   Close its window to stop ClipFarm.
 
 2. **Select the account you're about to play *before* you record.** A clip is tagged with
    whichever account is active when it's ingested. Play on the wrong selection and clips get the
