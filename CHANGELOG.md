@@ -7,6 +7,36 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ---
 
+## 2026-07-15
+
+### Added — auto-comment engagement CTA on every YouTube upload
+- Every upload now gets the channel's own first comment (config `youtube.auto_comment_text`,
+  default asks "Which champ should I clip next? 👇"). A question invites replies, and comment
+  activity is one of the few ranking signals we can seed ourselves — Shorts stall in the
+  ~1–2k test pool partly on engagement, and our uploads had none. Cosmetic like the thumbnail
+  and playlist steps: a comment failure never fails a finished upload.
+- Requires the `youtube.force-ssl` scope, now in `SCOPES` — **run `reauth-youtube` once** to
+  activate; until then uploads work as before and the comment is skipped with a log hint.
+  Credential loading now uses the token file's own scopes so adding a scope to `SCOPES` can
+  never break refreshes of an older token.
+
+### Fixed — full-game packaging was repelling the click (all VODs sat at ~0 views)
+- Titles like "Kassadin vs Talon Mid - Platinum II Ranked Solo/Duo LOSS 4/8/12 💪" are
+  robot-speak, advertise the loss, and bury the searchable phrase. New format leads with the
+  matchup, keeps the "Full Gameplay" search phrase, shows the score only when it's a brag
+  (win with recorded kills — no "LOSS 4/8/12", no "0/0/0" remakes):
+  `13/2/8 Kassadin vs Talon Mid — Platinum Full Gameplay (Patch 26.13)`. Result/KDA/queue
+  stay in the description for search.
+- **One-time repair:** all 82 unpublished matched full games (ready + approved) were
+  retitled in place from their stored match context — no Riot calls, thumbnails unaffected
+  (they render from match context, not the title).
+
+### Fixed — champion ranking mixed dead full games into the average
+- The metrics page's "what should I play?" champion panel averaged full games (~0 views by
+  nature) together with clips, so champions with more VODs published ranked unfairly low.
+  Champion performance now scores **clips only**; the kind panel still compares clip vs
+  full-game as before.
+
 ## 2026-07-13
 
 ### Added — posting-time experiment (explore schedule mode)

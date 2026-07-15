@@ -35,3 +35,34 @@ def test_unknown_reason_falls_back_to_message():
 
 def test_sanitize_strips_angle_brackets():
     assert youtube._sanitize("Talon <mid> deletes > everyone") == "Talon (mid) deletes ) everyone"
+
+
+class _FakeCommentService:
+    """Captures the commentThreads().insert(...) body the way googleapiclient would send it."""
+
+    def __init__(self):
+        self.body = None
+
+    def commentThreads(self):  # noqa: N802 -- mirrors the google client's casing
+        return self
+
+    def insert(self, part, body):
+        self.body = body
+        return self
+
+    def execute(self):
+        return {}
+
+
+def test_engagement_comment_targets_the_new_video():
+    service = _FakeCommentService()
+    youtube._post_engagement_comment(service, "vid123", "Which champ next? 👇")
+    snippet = service.body["snippet"]
+    assert snippet["videoId"] == "vid123"
+    assert snippet["topLevelComment"]["snippet"]["textOriginal"] == "Which champ next? 👇"
+
+
+def test_comments_scope_is_requested_on_reauth():
+    # The next `reauth-youtube` must ask for the comments permission, or auto-comment can
+    # never activate.
+    assert youtube._COMMENTS_SCOPE in youtube.SCOPES

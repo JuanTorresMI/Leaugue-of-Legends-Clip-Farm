@@ -20,11 +20,14 @@ from clipfarm.publishers import quota
 logger = logging.getLogger(__name__)
 
 # youtube = upload/manage; yt-analytics.readonly = watch time / CTR / impressions for the metrics
-# dashboard. Adding the analytics scope means the next `reauth-youtube` requests it; the existing
-# token keeps working for uploads and basic stats until then.
+# dashboard; youtube.force-ssl = the comments API (the auto-posted engagement comment -- Google
+# gates all comment endpoints behind this one scope). SCOPES is what `reauth-youtube` requests;
+# an existing token keeps working for everything it was granted until the next reauth.
+_COMMENTS_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 SCOPES = [
     "https://www.googleapis.com/auth/youtube",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
+    _COMMENTS_SCOPE,
 ]
 
 
@@ -81,7 +84,10 @@ def _load_credentials() -> Credentials:
             "to authorize (requires GOOGLE_CLIENT_SECRETS_PATH in .env to point at a downloaded "
             "OAuth Client ID JSON from Google Cloud Console)."
         )
-    creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+    # Load with the token file's own scopes (not SCOPES): refreshing a token while requesting
+    # scopes it was never granted makes Google reject the refresh outright, which would break
+    # uploads the moment a new scope lands in SCOPES. New scopes apply on the next reauth.
+    creds = Credentials.from_authorized_user_file(str(token_path))
     if creds.expired and creds.refresh_token:
         try:
             creds.refresh(GoogleAuthRequest())
@@ -156,6 +162,21 @@ def _add_to_champion_playlist(service, media_file: sqlite3.Row, video_id: str) -
     ).execute()
 
 
+def _post_engagement_comment(service, video_id: str, text: str) -> None:
+    """Drop the channel's own first comment under a fresh upload. Comments are one of the few
+    engagement signals we can seed ourselves, and a question invites replies -- every reply is
+    a ranking signal the video wouldn't otherwise get. Requires the youtube.force-ssl scope."""
+    service.commentThreads().insert(
+        part="snippet",
+        body={
+            "snippet": {
+                "videoId": video_id,
+                "topLevelComment": {"snippet": {"textOriginal": text}},
+            }
+        },
+    ).execute()
+
+
 def publish(media_file: sqlite3.Row) -> str:
     """Uploads a full game (as-is) or a clip (converted to vertical, tagged as a Short).
     Returns the new YouTube video id. Raises on quota exhaustion or upload failure."""
@@ -200,7 +221,8 @@ def publish(media_file: sqlite3.Row) -> str:
         "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False},
     }
 
-    service = _build_service()
+    creds = _load_credentials()
+    service = build("youtube", "v3", credentials=creds)
     media = MediaFileUpload(str(video_path), chunksize=10 * 1024 * 1024, resumable=True)
     request = service.videos().insert(part="snippet,status", body=body, media_body=media)
 
@@ -243,5 +265,22 @@ def publish(media_file: sqlite3.Row) -> str:
         except Exception:  # noqa: BLE001
             logger.warning("Playlist filing failed for %s -- video itself published fine.",
                            video_id, exc_info=True)
+
+    # Seed the channel's own first comment (a question CTA). Cosmetic like the thumbnail and
+    # playlist: a comment hiccup must never fail a finished upload. Tokens minted before the
+    # comments scope was added skip quietly until the next `reauth-youtube`.
+    comment_text = settings.youtube.auto_comment_text.strip()
+    if comment_text:
+        if _COMMENTS_SCOPE in (creds.scopes or []):
+            try:
+                _post_engagement_comment(service, video_id, comment_text)
+            except Exception:  # noqa: BLE001
+                logger.warning("Auto-comment failed for %s -- video itself published fine.",
+                               video_id, exc_info=True)
+        else:
+            logger.info(
+                "Skipping auto-comment for %s: the cached token predates the comments scope -- "
+                "run `python -m clipfarm.cli reauth-youtube` once to enable it.", video_id,
+            )
 
     return video_id

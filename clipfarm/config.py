@@ -73,6 +73,10 @@ class YoutubeConfig(BaseModel):
     default_full_game_visibility: str = "unlisted"
     default_clip_visibility: str = "unlisted"
     daily_upload_quota: int = 100
+    # Posted as the channel's own first comment under every upload -- a question invites
+    # replies, and comment activity is a ranking signal we can seed ourselves. Empty disables.
+    # Needs the comments scope: run `reauth-youtube` once after enabling.
+    auto_comment_text: str = ""
 
 
 class FacebookConfig(BaseModel):

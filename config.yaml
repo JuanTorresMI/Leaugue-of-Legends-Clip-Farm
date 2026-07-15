@@ -69,6 +69,11 @@ youtube:
   # change), separate from the shared 10,000-unit pool -- this tracks our own usage so we
   # can stop early with a clear message instead of surfacing a raw 403 from Google.
   daily_upload_quota: 100
+  # The channel's own first comment under every upload. A question invites replies, and
+  # comment activity is one of the few ranking signals we can seed ourselves. Empty ("")
+  # disables. Requires a one-time `python -m clipfarm.cli reauth-youtube` to grant the
+  # comments permission -- until then uploads still work and the comment is skipped.
+  auto_comment_text: "Which champ should I clip next? 👇 New clips every day!"
 
 facebook:
   enabled: false

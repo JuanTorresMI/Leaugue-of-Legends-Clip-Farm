@@ -90,5 +90,5 @@ enough:
 | `repair-metadata` | After noticing any rank/title drift, or as a periodic sanity pass. |
 | `backpost-facebook` | Deliberate one-time catch-up of clips already on YouTube but not Facebook. |
 | `refresh-drafts` | After changing metadata/title templates (regenerates unpublished drafts; spreads new A/B title variants). |
-| `reauth-youtube` / `reauth-facebook` | Re-grant analytics scopes if metrics go missing. |
+| `reauth-youtube` / `reauth-facebook` | Re-grant scopes: analytics if metrics go missing, and (one time, after 2026-07-15) the comments permission that activates the auto-posted engagement comment. |
 | `list-accounts` / `set-account` | Inspect or switch the active Riot account from the CLI. |

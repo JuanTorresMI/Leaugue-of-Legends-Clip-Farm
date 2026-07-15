@@ -83,12 +83,30 @@ def test_full_game_matchup_title():
 
     assert "Jarvan IV vs Viego" in meta.title
     assert "Jungle" in meta.title
-    assert "Emerald II" in meta.title
+    assert "Emerald" in meta.title       # tier only -- "Emerald II Ranked Solo/Duo" is robot-speak
     assert "26.13" in meta.title
-    assert "WIN" in meta.title
+    assert meta.title.startswith("12/4/6 ")  # a winning KDA is the hook that earns the click
+    assert "Full Gameplay" in meta.title     # the search phrase people actually type
     assert len(meta.title) <= YOUTUBE_TITLE_LIMIT
     assert "#Shorts" not in meta.hashtags  # full games are not Shorts
     assert "jarvan iv vs viego" in meta.tags
+    assert "WIN" in meta.description  # result stays in the description for search
+
+
+def test_full_game_loss_title_hides_the_score():
+    # "LOSS 4/8/12" in a title repels the click; a loss leads with the matchup instead.
+    meta = build_full_game_metadata(_match(win=False, kills=4, deaths=8, assists=12), RECORDED_AT,
+                                    rank="Emerald II")
+    assert "LOSS" not in meta.title
+    assert "4/8/12" not in meta.title
+    assert "Jarvan IV vs Viego" in meta.title
+    assert "LOSS" in meta.description  # honesty lives in the description
+
+
+def test_full_game_zero_kda_win_gets_no_score_hook():
+    # Remakes / missing data carry a 0/0/0 score -- "0/0/0 Illaoi vs Garen" repels the click.
+    meta = build_full_game_metadata(_match(kills=0, deaths=0, assists=0), RECORDED_AT)
+    assert not meta.title.startswith("0/0/0")
 
 
 def test_full_game_without_opponent():

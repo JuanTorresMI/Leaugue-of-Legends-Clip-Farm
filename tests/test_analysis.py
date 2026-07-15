@@ -80,6 +80,18 @@ def test_insights_ranks_champions_and_finds_converters(temp_db):
     assert ins["tier_counts"]["strong"] >= 1 and ins["tier_counts"]["weak"] >= 1
 
 
+def test_champion_ranking_ignores_full_games(temp_db):
+    # Full games sit at ~0 views by nature; they answer "should I upload VODs?", not "what
+    # should I play?". A champion with a dead full game must not rank below one without.
+    with db.get_conn() as conn:
+        _publish(conn, "k1", "youtube", views=1200, champion="Kassadin")
+        _publish(conn, "k2", "youtube", views=0, champion="Kassadin", kind="full_game")
+        _publish(conn, "q1", "youtube", views=650, champion="Qiyana")
+    champs = {c["champion"]: c for c in analysis.insights()["champions"]}
+    assert champs["Kassadin"]["avg_views"] == 1200  # not dragged to 600 by the full game
+    assert champs["Kassadin"]["count"] == 1
+
+
 def test_channel_timeline_forward_fills_and_accumulates(temp_db):
     with db.get_conn() as conn:
         # day 1: one YT video at 100 views

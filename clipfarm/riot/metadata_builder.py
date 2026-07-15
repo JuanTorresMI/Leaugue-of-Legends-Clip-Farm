@@ -244,16 +244,23 @@ def build_full_game_metadata(
     tier = _tier(rank)
     result = "WIN" if match.win else "LOSS"
 
+    # Title principles (the old "Champ vs Champ Role - Platinum II Ranked Solo/Duo LOSS 4/8/12"
+    # format sat at ~0 views): lead with what people actually search (the matchup + role),
+    # keep the "Full Gameplay" search phrase, and only show the score when it's a brag --
+    # a KDA hook on a win earns the click, "LOSS 4/8/12" repels it. Queue/result/KDA all
+    # stay in the description for search; the title is for humans.
     if match.opponent_champion:
         matchup = f"{champ} vs {display_name(match.opponent_champion)}"
-        hook = f"{matchup}{f' {match.role}' if match.role else ''}"
     else:
-        hook = f"{champ}{f' {match.role}' if match.role else ''} Full Gameplay"
-
-    rank_bit = f"{rank} " if rank else ""
+        matchup = champ
+    role_bit = f" {match.role}" if match.role else ""
+    # Only brag when there's something to brag about: a win with recorded kills. Some rows
+    # (remakes, missing data) carry a 0/0/0 score -- "0/0/0 Illaoi vs Garen" repels harder
+    # than no score at all.
+    kda_hook = f"{match.kda} " if match.win and match.kills > 0 else ""
+    tier_bit = f"{tier} " if tier else ""
     patch_bit = f" (Patch {match.patch})" if match.patch else ""
-    result_emoji = "🏆" if match.win else "💪"
-    title = _fit_title(f"{hook} - {rank_bit}{match.queue_type} {result} {match.kda}{patch_bit} {result_emoji}")
+    title = _fit_title(f"{kda_hook}{matchup}{role_bit} — {tier_bit}Full Gameplay{patch_bit}")
 
     hashtags = ["#LeagueOfLegends", "#LoL", f"#{champ_tag}"]
     if match.opponent_champion:

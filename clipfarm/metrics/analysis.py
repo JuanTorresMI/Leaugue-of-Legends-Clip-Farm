@@ -247,7 +247,10 @@ def insights(records: list[dict] | None = None) -> dict:
     conv_pool = [r for r in records if r["subscribers_gained"]]
     rising_pool = [r for r in records if (r["views_24h"] or 0) > 0]
 
-    champ_perf = _group_perf(records, "champion")
+    # Champion ranking answers "what should I play more of?", so it must compare like with
+    # like: clips only. Full games sit at near-zero views by nature, and mixing them in
+    # penalized whichever champions happened to have more full games published.
+    champ_perf = _group_perf([r for r in records if r["kind"] == "clip"], "champion")
     return {
         "champions": champ_perf,
         "best_champions": champ_perf[:5],
