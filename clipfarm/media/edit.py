@@ -145,6 +145,13 @@ def _render_subscribe_png(text: str, out_path: Path) -> Path | None:
     return _render_text_png(text, out_path, y_frac=0.16, max_size=96, min_size=48, stroke=6)
 
 
+def _render_like_png(text: str, out_path: Path) -> Path | None:
+    """The like ask flashed briefly mid-clip. Smallest of the three text moments (hook >
+    subscribe > like): it lands during the action, so it has to read as a nudge, not a
+    billboard. Same upper-third slot; the three windows never overlap."""
+    return _render_text_png(text, out_path, y_frac=0.16, max_size=84, min_size=44, stroke=5)
+
+
 def pick_music() -> Path | None:
     """A random track from the music folder, or None if the folder is empty/missing."""
     music_dir = get_settings().editing.music_dir
@@ -260,6 +267,26 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
             cta_index = next_index
             next_index += 1
 
+    # Optional like ask flashed mid-clip, near the action's peak. Likes are the one ranking
+    # signal a viewer can give without leaving the video, and our best performers are exactly
+    # the ones that collected them -- but nobody taps unless asked. Only rendered when its
+    # window clears both the hook (start) and the subscribe ask (end) with a second to spare.
+    like_png: Path | None = None
+    like_index: int | None = None
+    like_start = 0.0
+    if ed.like_cta_text.strip() and duration > 0:
+        like_start = duration * 0.55
+        cta_begin = duration - ed.subscribe_cta_seconds if cta_index is not None else duration
+        if (
+            like_start > ed.hook_seconds + 1.0
+            and like_start + ed.like_cta_seconds < cta_begin - 1.0
+        ):
+            like_png = _render_like_png(ed.like_cta_text.strip(), output_path.with_suffix(".like.png"))
+            if like_png is not None:
+                inputs += ["-loop", "1", "-t", f"{duration:.2f}", "-i", str(like_png)]
+                like_index = next_index
+                next_index += 1
+
     # --- video chain: blurred bg + crisp fg, then caption/watermark overlays, then fades ---
     base = (
         f"[0:v]{_VERTICAL_BG}[bg];"
@@ -271,6 +298,11 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
         overlays.append(f"[{caption_index}:v]overlay=0:0:enable='lte(t,{ed.hook_seconds:.2f})'")
     if cta_index is not None:
         overlays.append(f"[{cta_index}:v]overlay=0:0:enable='gte(t,{cta_start:.2f})'")
+    if like_index is not None:
+        overlays.append(
+            f"[{like_index}:v]overlay=0:0:"
+            f"enable='between(t,{like_start:.2f},{like_start + ed.like_cta_seconds:.2f})'"
+        )
     if watermark_index is not None:
         overlays.append(f"[{watermark_index}:v]overlay=0:0")
 
@@ -314,4 +346,6 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
             watermark_png.unlink(missing_ok=True)
         if cta_png is not None:
             cta_png.unlink(missing_ok=True)
+        if like_png is not None:
+            like_png.unlink(missing_ok=True)
     return output_path

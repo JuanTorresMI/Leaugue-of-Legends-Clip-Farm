@@ -7,6 +7,33 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ---
 
+## 2026-07-18
+
+### Fixed — the posting-time experiment was learning from poisoned data
+- `hour_performance()` (and therefore `recommended_hours()` / Apply-recommended) averaged
+  **full games** (~0 views by nature, all stacked on the full-game hour) and **Facebook**
+  numbers (5–15 views) into the per-hour view averages. The full-game hour looked
+  catastrophic (15:00 showed 110 avg views; the real clips-only number is 932) and every
+  hour was diluted. Now scored on **YouTube clips only** — the thing the clip schedule
+  actually decides. Corrected leaders so far: 16:00, 23:00, 21:00.
+
+### Added — mid-clip like ask ("LIKE IF THAT WAS CLEAN")
+- A brief flash at ~55% of each clip, in the same upper-third slot as the hook and the
+  subscribe ask (the three windows never overlap; skipped entirely on clips too short to
+  keep them apart). Likes are the one ranking signal a viewer can give without leaving the
+  video, our best performers are exactly the ones that collected likes (the penta: 14; the
+  11-like double: 1,067 views), and nothing was asking. Verified on a real NVENC render
+  (flash present at 19.5s, absent at 10s). Config `editing.like_cta_text` / `like_cta_seconds`.
+
+### Changed — auto-comment: rotation pool + a visible "inactive" warning
+- The seeded first comment now rotates deterministically through `youtube.auto_comment_texts`
+  (4 question variants) instead of repeating one sentence several times a day — identical
+  repeated comments read as spam to viewers and to YouTube's filter.
+- The dashboard now shows a header banner when auto-comment is configured but the cached
+  token predates the comments permission (new `/api/youtube-health`, token-file check only).
+  It has been silently skipped since 07-15 — **run `python -m clipfarm.cli reauth-youtube`
+  once to activate it.**
+
 ## 2026-07-15
 
 ### Added — auto-comment engagement CTA on every YouTube upload

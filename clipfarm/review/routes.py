@@ -333,6 +333,31 @@ def riot_health() -> dict:
     return {"ok": ok}
 
 
+@router.get("/api/youtube-health")
+def youtube_health() -> dict:
+    """Whether the cached YouTube token can post the auto-comment (needs youtube.force-ssl).
+    Reads the token file only -- no API call, so it's free to poll. The dashboard shows a
+    banner when the comment feature is configured but the token predates the scope."""
+    from clipfarm.publishers.youtube import _COMMENTS_SCOPE, _token_path
+
+    settings = get_settings()
+    wants_comments = bool(
+        settings.youtube.auto_comment_text.strip() or settings.youtube.auto_comment_texts
+    )
+    token_path = _token_path()
+    if not token_path.exists():
+        return {"token": False, "comments_ok": False, "wants_comments": wants_comments}
+    try:
+        scopes = json.loads(token_path.read_text()).get("scopes", [])
+    except (ValueError, OSError):
+        scopes = []
+    return {
+        "token": True,
+        "comments_ok": _COMMENTS_SCOPE in scopes,
+        "wants_comments": wants_comments,
+    }
+
+
 class RiotKeyRequest(BaseModel):
     key: str
 

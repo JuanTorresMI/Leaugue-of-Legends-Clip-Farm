@@ -275,10 +275,17 @@ def insights(records: list[dict] | None = None) -> dict:
 # --- best time to post (feeds the auto-post schedule) ----------------------------------------
 
 def hour_performance() -> list[dict]:
-    """Per local upload-hour: sample count and average views, best first."""
+    """Per local upload-hour: sample count and average views, best first.
+
+    Clips on YouTube only. This feeds the posting-time experiment, which schedules the *clip*
+    track -- mixing in full games (~0 views by nature, all stacked on the full-game hour) or
+    Facebook's much smaller numbers made whatever hour they landed on look terrible and let
+    Apply-recommended learn from noise."""
     offset = _utc_to_local_offset_hours()
     buckets: dict[int, list[int]] = defaultdict(list)
     for r in video_records():
+        if r["kind"] != "clip" or r["platform"] != "youtube":
+            continue
         published, views = r["published_at"], r["views"]
         if not published or views is None:
             continue

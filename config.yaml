@@ -61,6 +61,11 @@ editing:
   # the only moment a Shorts viewer will ever act on it. Empty string ("") disables it.
   subscribe_cta_text: "SUBSCRIBE FOR MORE"
   subscribe_cta_seconds: 2.5
+  # Brief like ask flashed mid-clip, near the action's peak. Likes are the one ranking signal
+  # a viewer can give without leaving the video -- and our best-performing clips are exactly
+  # the ones that collected them. Words only (the burned font has no emoji glyphs). "" disables.
+  like_cta_text: "LIKE IF THAT WAS CLEAN"
+  like_cta_seconds: 2.0
 
 youtube:
   default_full_game_visibility: public
@@ -70,10 +75,16 @@ youtube:
   # can stop early with a clear message instead of surfacing a raw 403 from Google.
   daily_upload_quota: 100
   # The channel's own first comment under every upload. A question invites replies, and
-  # comment activity is one of the few ranking signals we can seed ourselves. Empty ("")
-  # disables. Requires a one-time `python -m clipfarm.cli reauth-youtube` to grant the
-  # comments permission -- until then uploads still work and the comment is skipped.
-  auto_comment_text: "Which champ should I clip next? 👇 New clips every day!"
+  # comment activity is one of the few ranking signals we can seed ourselves. Requires a
+  # one-time `python -m clipfarm.cli reauth-youtube` to grant the comments permission --
+  # until then uploads still work and the comment is skipped. Each upload picks one
+  # (deterministically) so the channel never posts the same sentence several times a day.
+  # Empty list + empty auto_comment_text disables the feature.
+  auto_comment_texts:
+    - "Which champ should I clip next? 👇 New clips every day!"
+    - "Rate this play 1-10 👇"
+    - "Clean or lucky? You decide 👇"
+    - "What's your main? Drop it below 👇"
 
 facebook:
   enabled: false

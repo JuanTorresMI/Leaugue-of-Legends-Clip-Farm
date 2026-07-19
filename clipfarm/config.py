@@ -67,6 +67,11 @@ class EditingConfig(BaseModel):
     # while the finger is hovering. Empty string disables it.
     subscribe_cta_text: str = ""
     subscribe_cta_seconds: float = 2.5
+    # Flash a brief like ask mid-clip (near the action's peak). A like is the one ranking
+    # signal a viewer can give without leaving the video; nobody taps unless asked. Empty
+    # string disables it. NOTE: the burned font has no emoji glyphs -- use words, not 👍.
+    like_cta_text: str = ""
+    like_cta_seconds: float = 2.0
 
 
 class YoutubeConfig(BaseModel):
@@ -77,6 +82,11 @@ class YoutubeConfig(BaseModel):
     # replies, and comment activity is a ranking signal we can seed ourselves. Empty disables.
     # Needs the comments scope: run `reauth-youtube` once after enabling.
     auto_comment_text: str = ""
+    # Optional rotation pool. When non-empty it replaces auto_comment_text: each upload picks
+    # one (deterministically, by video id), so the channel isn't posting the exact same
+    # sentence several times a day -- identical repeated comments read as spam to both
+    # viewers and YouTube's filter.
+    auto_comment_texts: list[str] = []
 
 
 class FacebookConfig(BaseModel):

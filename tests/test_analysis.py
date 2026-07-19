@@ -80,6 +80,20 @@ def test_insights_ranks_champions_and_finds_converters(temp_db):
     assert ins["tier_counts"]["strong"] >= 1 and ins["tier_counts"]["weak"] >= 1
 
 
+def test_hour_performance_scores_youtube_clips_only(temp_db):
+    # The posting-time experiment schedules the YouTube clip track. Full games (~0 views,
+    # stacked on the full-game hour) and Facebook's smaller numbers must not poison the
+    # hour averages that Apply-recommended locks in.
+    with db.get_conn() as conn:
+        _publish(conn, "c1", "youtube", views=1000, published_at="2026-07-01 15:00:00")
+        _publish(conn, "g1", "youtube", views=0, kind="full_game", published_at="2026-07-01 15:10:00")
+        _publish(conn, "f1", "facebook", views=5, published_at="2026-07-01 15:20:00")
+    perf = analysis.hour_performance()
+    assert len(perf) == 1
+    assert perf[0]["samples"] == 1  # just the YouTube clip
+    assert perf[0]["avg_views"] == 1000
+
+
 def test_champion_ranking_ignores_full_games(temp_db):
     # Full games sit at ~0 views by nature; they answer "should I upload VODs?", not "what
     # should I play?". A champion with a dead full game must not rank below one without.

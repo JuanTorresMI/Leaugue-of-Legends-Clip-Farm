@@ -162,6 +162,20 @@ def _add_to_champion_playlist(service, media_file: sqlite3.Row, video_id: str) -
     ).execute()
 
 
+def _comment_text_for(settings, video_id: str) -> str:
+    """The engagement comment for this upload. Rotates deterministically (by video id) through
+    the configured pool so the channel isn't posting the exact same sentence several times a
+    day -- identical repeated comments read as spam to viewers and to YouTube's filter."""
+    import zlib
+
+    pool = [t.strip() for t in settings.youtube.auto_comment_texts if t.strip()]
+    if not pool and settings.youtube.auto_comment_text.strip():
+        pool = [settings.youtube.auto_comment_text.strip()]
+    if not pool:
+        return ""
+    return pool[zlib.crc32(video_id.encode()) % len(pool)]
+
+
 def _post_engagement_comment(service, video_id: str, text: str) -> None:
     """Drop the channel's own first comment under a fresh upload. Comments are one of the few
     engagement signals we can seed ourselves, and a question invites replies -- every reply is
@@ -269,7 +283,7 @@ def publish(media_file: sqlite3.Row) -> str:
     # Seed the channel's own first comment (a question CTA). Cosmetic like the thumbnail and
     # playlist: a comment hiccup must never fail a finished upload. Tokens minted before the
     # comments scope was added skip quietly until the next `reauth-youtube`.
-    comment_text = settings.youtube.auto_comment_text.strip()
+    comment_text = _comment_text_for(settings, video_id)
     if comment_text:
         if _COMMENTS_SCOPE in (creds.scopes or []):
             try:

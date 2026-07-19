@@ -62,6 +62,27 @@ def test_engagement_comment_targets_the_new_video():
     assert snippet["topLevelComment"]["snippet"]["textOriginal"] == "Which champ next? 👇"
 
 
+class _CfgSettings:
+    def __init__(self, texts=(), single=""):
+        from types import SimpleNamespace
+
+        self.youtube = SimpleNamespace(auto_comment_texts=list(texts), auto_comment_text=single)
+
+
+def test_comment_rotation_is_deterministic_and_spans_the_pool():
+    pool = ["Rate this 1-10", "Clean or lucky?", "Which champ next?"]
+    s = _CfgSettings(texts=pool)
+    picks = {youtube._comment_text_for(s, f"vid{i}") for i in range(40)}
+    assert picks == set(pool)  # every option gets used across uploads
+    assert youtube._comment_text_for(s, "vidX") == youtube._comment_text_for(s, "vidX")
+
+
+def test_comment_falls_back_to_single_text_and_empty_disables():
+    assert youtube._comment_text_for(_CfgSettings(single="One question?"), "v") == "One question?"
+    assert youtube._comment_text_for(_CfgSettings(), "v") == ""
+    assert youtube._comment_text_for(_CfgSettings(texts=["  ", ""]), "v") == ""
+
+
 def test_comments_scope_is_requested_on_reauth():
     # The next `reauth-youtube` must ask for the comments permission, or auto-comment can
     # never activate.

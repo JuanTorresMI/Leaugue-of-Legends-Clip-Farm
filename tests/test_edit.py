@@ -66,6 +66,8 @@ def _edit_settings(tmp_path, **overrides):
         watermark_text = ""
         subscribe_cta_text = ""
         subscribe_cta_seconds = 2.5
+        like_cta_text = ""
+        like_cta_seconds = 2.0
 
     for key, value in overrides.items():
         setattr(_Ed, key, value)
@@ -125,6 +127,35 @@ def test_prepare_clip_skips_cta_on_short_clips(tmp_path, monkeypatch):
     edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4")
     fc = captured["args"][captured["args"].index("-filter_complex") + 1]
     assert "gte(t," not in fc
+
+
+def test_prepare_clip_flashes_like_ask_mid_clip(tmp_path, monkeypatch):
+    """The like ask shows for a brief window at ~55% of the clip, clear of hook and CTA."""
+    captured = {}
+    monkeypatch.setattr(edit, "get_settings",
+                        lambda: _edit_settings(tmp_path, like_cta_text="LIKE IF THAT WAS CLEAN",
+                                               subscribe_cta_text="SUBSCRIBE FOR MORE"))
+    monkeypatch.setattr(edit, "duration_seconds", lambda p: 34.3)
+    monkeypatch.setattr(edit, "_run", lambda args: captured.setdefault("args", args))
+
+    edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4")
+    fc = captured["args"][captured["args"].index("-filter_complex") + 1]
+    assert "between(t,18.86,20.86)" in fc          # 34.3 * 0.55, for like_cta_seconds
+    assert "overlay=0:0:enable='gte(t,31.80)'" in fc  # subscribe ask still on its own window
+
+
+def test_prepare_clip_skips_like_ask_when_windows_would_collide(tmp_path, monkeypatch):
+    """On a short clip the mid-point sits inside the hook/CTA windows -> no like overlay."""
+    captured = {}
+    monkeypatch.setattr(edit, "get_settings",
+                        lambda: _edit_settings(tmp_path, like_cta_text="LIKE IF THAT WAS CLEAN",
+                                               subscribe_cta_text="SUBSCRIBE FOR MORE"))
+    monkeypatch.setattr(edit, "duration_seconds", lambda p: 9.0)  # midpoint 4.95, CTA begins 6.5
+    monkeypatch.setattr(edit, "_run", lambda args: captured.setdefault("args", args))
+
+    edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4")
+    fc = captured["args"][captured["args"].index("-filter_complex") + 1]
+    assert "between(t," not in fc
 
 
 def test_prepared_clip_renders_once_under_concurrency(tmp_path, monkeypatch):

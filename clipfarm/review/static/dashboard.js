@@ -140,6 +140,24 @@ async function loadRiotHealth() {
   }
 }
 
+async function loadYoutubeHealth() {
+  // The auto-comment silently no-ops while the cached token predates the comments scope --
+  // surface that here instead of burying it in the logs.
+  const banner = document.getElementById("yt-banner");
+  try {
+    const res = await fetch("/api/youtube-health");
+    const data = await res.json();
+    if (data.token && data.wants_comments && !data.comments_ok) {
+      banner.textContent = "Auto-comment inactive — run: python -m clipfarm.cli reauth-youtube";
+      banner.classList.remove("hidden");
+    } else {
+      banner.classList.add("hidden");
+    }
+  } catch (e) {
+    // dashboard should still work even if the health check itself fails
+  }
+}
+
 function toggleKeyForm(show) {
   const form = document.getElementById("key-form");
   form.classList.toggle("hidden", !show);
@@ -569,6 +587,7 @@ function startLivePolling() {
     loadQuota();
     loadRematchButton();
     loadRiotHealth();
+    loadYoutubeHealth();
     loadFacebook();
     loadAutopost();
   }, 12000);
@@ -576,6 +595,7 @@ function startLivePolling() {
 
 loadAccounts();
 loadRiotHealth();
+loadYoutubeHealth();
 loadQuota();
 loadRematchButton();
 loadFacebook();
