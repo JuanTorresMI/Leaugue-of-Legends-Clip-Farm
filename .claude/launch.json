@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "clipfarm-dashboard",
-      "runtimeExecutable": "~/Downloads\\LeagueClipFarm\\.venv\\Scripts\\python.exe",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "clipfarm.cli", "watch"],
       "port": 8000
     }
