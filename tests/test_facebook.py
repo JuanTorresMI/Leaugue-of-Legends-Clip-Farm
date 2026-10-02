@@ -99,3 +99,52 @@ def test_validate_non_json_error_body_does_not_crash(monkeypatch):
     monkeypatch.setattr(facebook.requests, "get", lambda *a, **kw: _ValidateResp(502, None, "Bad Gateway"))
     with pytest.raises(facebook.FacebookAuthError, match="Bad Gateway"):
         facebook.validate_credentials("123", "tok")
+
+
+# --- Facebook description: no doubled hashtags, no YouTube-only tags ---
+
+_DRAFT = (
+    "Yunara gets a Double Kill on Twitch & Nami in Ranked Solo/Duo.\n"
+    "SUBSCRIBE for daily Yunara plays -- new clips every day.\n\n"
+    "#Shorts #Yunara #DoubleKill #LeagueOfLegends #LoL #Gaming"
+)
+_TAGS = ["#Shorts", "#Yunara", "#DoubleKill", "#LeagueOfLegends", "#LoL", "#Gaming"]
+
+
+def test_builder_draft_gets_each_hashtag_exactly_once():
+    out = facebook.facebook_description(_DRAFT, _TAGS)
+    words = out.split()
+    for tag in ["#Yunara", "#DoubleKill", "#LeagueOfLegends", "#LoL", "#Gaming"]:
+        assert words.count(tag) == 1, out
+    assert out.endswith("#Yunara #DoubleKill #LeagueOfLegends #LoL #Gaming")
+
+
+def test_youtube_only_tags_and_subscribe_are_adapted():
+    out = facebook.facebook_description(_DRAFT, _TAGS)
+    assert "#shorts" not in out.lower()
+    assert "SUBSCRIBE" not in out and "FOLLOW for daily Yunara plays" in out
+
+
+def test_hand_written_description_without_tags_gets_them_once():
+    out = facebook.facebook_description("Clean outplay.", ["#Shorts", "#Zeri", "#LoL"])
+    assert out == "Clean outplay.\n\n#Zeri #LoL"
+
+
+def test_inline_hashtag_in_body_is_not_repeated_and_case_insensitive_dedupe():
+    out = facebook.facebook_description("Best #zeri play ever\n\n#ZERI #lol", ["#Zeri", "#LoL", "#Gaming"])
+    # #ZERI is already used inline; #lol is kept once (the draft list's #LoL is its duplicate).
+    assert out == "Best #zeri play ever\n\n#lol #Gaming"
+
+
+def test_publish_reel_sends_deduped_description(tmp_path, monkeypatch):
+    sent = {}
+    monkeypatch.setattr(facebook, "publish_reel", lambda path, desc: sent.setdefault("desc", desc) and "R1")
+    monkeypatch.setattr("clipfarm.media.edit.prepared_clip", lambda path, hook: path)
+    monkeypatch.setattr("clipfarm.media.edit.hook_text_for", lambda mf: None)
+    row = {
+        "path": str(tmp_path / "clip.mp4"), "kind": "clip", "draft_title": "t #shorts",
+        "draft_description": _DRAFT, "draft_hashtags": '["#Shorts", "#Yunara", "#DoubleKill", '
+        '"#LeagueOfLegends", "#LoL", "#Gaming"]',
+    }
+    facebook.publish(row)
+    assert sent["desc"].split().count("#Yunara") == 1

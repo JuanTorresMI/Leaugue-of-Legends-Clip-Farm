@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from pathlib import Path
 
@@ -194,13 +195,47 @@ def publish(media_file: sqlite3.Row) -> str:
 
     video_path = Path(media_file["path"])
     hashtags = json.loads(media_file["draft_hashtags"]) if media_file["draft_hashtags"] else []
-    description = media_file["draft_description"] or ""
-    # Drafts are written YouTube-first; on a Facebook Page the ask is Follow, not Subscribe.
-    description = description.replace("SUBSCRIBE", "FOLLOW")
-    if hashtags:
-        description = f"{description}\n\n{' '.join(hashtags)}"
+    description = facebook_description(media_file["draft_description"] or "", hashtags)
 
     if media_file["kind"] == "clip":
         # Reels need the same vertical/edited render as YouTube Shorts.
         return publish_reel(prepared_clip(video_path, hook_text_for(media_file)), description)
-    return publish_page_video(video_path, media_file["draft_title"], description)
+    title = _YOUTUBE_ONLY_TAG_RE.sub("", media_file["draft_title"] or "").strip()
+    return publish_page_video(video_path, title, description)
+
+
+# Tags that only mean something on YouTube. On Facebook they read as a cross-post, which the
+# feed ranks down -- strip them wherever they appear.
+_YOUTUBE_ONLY_TAGS = {"#shorts", "#youtubeshorts", "#ytshorts"}
+_YOUTUBE_ONLY_TAG_RE = re.compile(r"\s*#(?:shorts|youtubeshorts|ytshorts)\b", re.IGNORECASE)
+
+
+def _is_hashtag_line(line: str) -> bool:
+    tokens = line.split()
+    return bool(tokens) and all(t.startswith("#") for t in tokens)
+
+
+def facebook_description(description: str, hashtags: list[str]) -> str:
+    """Adapt a YouTube-first draft description for a Facebook post.
+
+    Drafts already end with their hashtag block, so blindly appending `hashtags` posted every
+    tag twice -- a spam signal that tanks reach. Instead: lift the trailing hashtag line(s) off
+    the body, merge them with `hashtags` (case-insensitive dedupe, order kept, YouTube-only tags
+    dropped, anything already used inline in the body skipped), and append one clean line."""
+    # On a Facebook Page the ask is Follow, not Subscribe.
+    lines = description.replace("SUBSCRIBE", "FOLLOW").rstrip().splitlines()
+    trailing: list[str] = []
+    while lines and (_is_hashtag_line(lines[-1]) or not lines[-1].strip()):
+        trailing = lines.pop().split() + trailing
+    body = _YOUTUBE_ONLY_TAG_RE.sub("", "\n".join(lines)).rstrip()
+
+    seen = {t.lower() for t in re.findall(r"#\w+", body)} | _YOUTUBE_ONLY_TAGS
+    tags: list[str] = []
+    for tag in [*trailing, *hashtags]:
+        if tag.startswith("#") and tag.lower() not in seen:
+            seen.add(tag.lower())
+            tags.append(tag)
+
+    if not tags:
+        return body
+    return f"{body}\n\n{' '.join(tags)}" if body else " ".join(tags)
