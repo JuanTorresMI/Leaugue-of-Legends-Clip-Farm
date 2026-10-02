@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
+from clipfarm.media.composite import _font
 from clipfarm.media.ffmpeg import FfmpegError, duration_seconds, grab_frame
 
 
@@ -44,10 +45,7 @@ def _save_with_overlay(source_image_path: Path, output_jpg_path: Path, overlay_t
 def _draw_overlay(image: Image.Image, text: str) -> None:
     draw = ImageDraw.Draw(image)
     font_size = max(image.width // 14, 32)
-    try:
-        font = ImageFont.load_default(size=font_size)
-    except TypeError:
-        font = ImageFont.load_default()
+    font = _font(font_size)  # Anton, same face as the composite thumbnails
 
     bbox = draw.textbbox((0, 0), text, font=font, stroke_width=4)
     text_width = bbox[2] - bbox[0]

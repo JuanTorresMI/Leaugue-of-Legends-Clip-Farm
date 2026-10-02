@@ -1,3 +1,15 @@
+// FastAPI errors carry a human-readable `detail`; fall back to the HTTP status text.
+async function errorDetail(res) {
+  const err = await res.json().catch(() => ({}));
+  return typeof err.detail === "string" ? err.detail : res.statusText || `HTTP ${res.status}`;
+}
+
+function showCardError(card, message) {
+  const statusDiv = card.querySelector(".status");
+  statusDiv.textContent = message;
+  statusDiv.className = "status failed";
+}
+
 async function loadQuota() {
   const quotaDiv = document.getElementById("quota");
   try {
@@ -482,7 +494,12 @@ function renderTargetStatus(card, item) {
       retry.addEventListener("click", async () => {
         retry.disabled = true;
         retry.textContent = "Retrying...";
-        await fetch(`/api/queue/${item.id}/retry/${t.platform}`, { method: "POST" });
+        try {
+          const res = await fetch(`/api/queue/${item.id}/retry/${t.platform}`, { method: "POST" });
+          if (!res.ok) showCardError(card, `Retry failed: ${await errorDetail(res)}`);
+        } catch (e) {
+          showCardError(card, "Retry failed: could not reach the server.");
+        }
         loadQueue();
       });
       wrap.appendChild(retry);
@@ -494,14 +511,34 @@ function renderCard(item, template) {
   const card = template.content.cloneNode(true).querySelector(".card");
   card.dataset.id = item.id;
   card.querySelector("video").src = item.video_url;
+  // A thumbnail file deleted from disk 404s; hide it rather than show a broken-image icon.
+  // (Regenerate Thumbnail rebuilds it and un-hides it.)
+  card.querySelector("img.thumb").addEventListener("error", (e) => (e.target.style.display = "none"));
 
   applyCardState(card, item);
 
-  card.querySelector(".regen").addEventListener("click", async () => {
-    const res = await fetch(`/api/queue/${item.id}/regenerate-thumbnail`, { method: "POST" });
-    const data = await res.json();
-    card.querySelector("img.thumb").src = data.thumbnail_url; // response already cache-busted
-    card.dataset.thumbSig = "regen-" + Date.now();
+  const regenBtn = card.querySelector(".regen");
+  const regenLabel = regenBtn.textContent;
+  regenBtn.addEventListener("click", async () => {
+    regenBtn.disabled = true;
+    regenBtn.textContent = "Generating...";
+    try {
+      const res = await fetch(`/api/queue/${item.id}/regenerate-thumbnail`, { method: "POST" });
+      if (!res.ok) {
+        showCardError(card, `Thumbnail failed: ${await errorDetail(res)}`);
+        return;
+      }
+      const data = await res.json();
+      const thumb = card.querySelector("img.thumb");
+      thumb.style.display = "";
+      thumb.src = data.thumbnail_url; // response already cache-busted
+      card.dataset.thumbSig = "regen-" + Date.now();
+    } catch (e) {
+      showCardError(card, "Thumbnail failed: could not reach the server.");
+    } finally {
+      regenBtn.disabled = false;
+      regenBtn.textContent = regenLabel;
+    }
   });
 
   card.querySelector(".approve").addEventListener("click", async () => {
@@ -511,27 +548,38 @@ function renderCard(item, template) {
     const tags = card.querySelector(".tags");
     const platformsDiv = card.querySelector(".platforms");
     const statusDiv = card.querySelector(".status");
-    await fetch(`/api/queue/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        draft_title: title.value,
-        draft_description: description.value,
-        hashtags: hashtags.value.split(/\s+/).filter(Boolean),
-        tags: tags.value.split(",").map((t) => t.trim()).filter(Boolean),
-      }),
-    });
-    // Reflect the saved edits as the new "server" baseline so live polling doesn't revert them.
-    [title, description, hashtags, tags].forEach((f) => (f.dataset.server = f.value));
     const selected = Array.from(platformsDiv.querySelectorAll("input:checked")).map((c) => c.value);
     const approveBtn = card.querySelector(".approve");
+    const failApprove = (message) => {
+      showCardError(card, message);
+      approveBtn.disabled = false;
+      approveBtn.textContent = "Approve";
+    };
     approveBtn.disabled = true;
     approveBtn.textContent = "Publishing...";
-    await fetch(`/api/queue/${item.id}/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platforms: selected }),
-    });
+    try {
+      const saveRes = await fetch(`/api/queue/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draft_title: title.value,
+          draft_description: description.value,
+          hashtags: hashtags.value.split(/\s+/).filter(Boolean),
+          tags: tags.value.split(",").map((t) => t.trim()).filter(Boolean),
+        }),
+      });
+      if (!saveRes.ok) return failApprove(`Could not save edits: ${await errorDetail(saveRes)}`);
+      // Reflect the saved edits as the new "server" baseline so live polling doesn't revert them.
+      [title, description, hashtags, tags].forEach((f) => (f.dataset.server = f.value));
+      const approveRes = await fetch(`/api/queue/${item.id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platforms: selected }),
+      });
+      if (!approveRes.ok) return failApprove(`Could not approve: ${await errorDetail(approveRes)}`);
+    } catch (e) {
+      return failApprove("Could not reach the server -- is ClipFarm still running?");
+    }
     statusDiv.textContent = selected.length ? "publishing..." : "approved (nothing selected)";
     statusDiv.className = "status";
     // The live queue poll takes over from here: chips flip pending -> uploading -> published,

@@ -284,6 +284,8 @@ def regenerate_thumbnail(media_file_id: int, offset_seconds: float | None = None
             row = db.get_media_file(conn, media_file_id)
 
     video_path = Path(row["path"])
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Source recording no longer exists on disk.")
     if offset_seconds is None:
         try:
             total = duration_seconds(video_path)
@@ -296,15 +298,19 @@ def regenerate_thumbnail(media_file_id: int, offset_seconds: float | None = None
     # under the DB. Cache-busting on the client handles the browser showing the new image.
     output_jpg = _canonical_thumbnail_path(video_path, row["kind"])
     spec = spec_from_row(row)
-    if spec is not None:
-        frame = output_jpg.with_suffix(".frame.png")
-        try:
-            grab_frame(video_path, frame, offset_seconds)
-            generate_composite(spec, frame, output_jpg)
-        finally:
-            frame.unlink(missing_ok=True)
-    else:
-        generate_thumbnail(video_path, output_jpg, offset_seconds, row["draft_title"])
+    try:
+        if spec is not None:
+            frame = output_jpg.with_suffix(".frame.png")
+            try:
+                grab_frame(video_path, frame, offset_seconds)
+                generate_composite(spec, frame, output_jpg)
+            finally:
+                frame.unlink(missing_ok=True)
+        else:
+            generate_thumbnail(video_path, output_jpg, offset_seconds, row["draft_title"])
+    except FfmpegError as exc:
+        logger.warning("Thumbnail regeneration failed for media_file %s: %s", media_file_id, exc)
+        raise HTTPException(status_code=500, detail="ffmpeg could not grab a frame from this recording.") from exc
 
     with db.get_conn() as conn:
         db.update_media_file(conn, media_file_id, thumbnail_path=str(output_jpg))
@@ -484,9 +490,11 @@ def scan_now_endpoint() -> dict:
 def get_video(media_file_id: int) -> FileResponse:
     with db.get_conn() as conn:
         row = db.get_media_file(conn, media_file_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="Not found")
-        return FileResponse(row["path"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not Path(row["path"]).exists():
+        raise HTTPException(status_code=404, detail="Recording file missing")
+    return FileResponse(row["path"])
 
 
 @router.get("/media/{media_file_id}/thumbnail")

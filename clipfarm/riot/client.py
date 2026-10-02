@@ -43,8 +43,9 @@ class RiotClient:
             status = _status_code(exc)
             if status in (401, 403):
                 raise RiotKeyExpiredError(
-                    "Riot API key was rejected (401/403) -- refresh RIOT_API_KEY in .env "
-                    "from https://developer.riotgames.com (dev keys expire every ~24h)."
+                    "Riot API key was rejected (401/403) -- get a fresh key from "
+                    "https://developer.riotgames.com and paste it into the dashboard's Riot Key "
+                    "panel (dev keys expire every ~24h)."
                 ) from exc
             raise
 
@@ -148,7 +149,7 @@ def validate_account(game_name: str, tag_line: str, region: str) -> str:
         status = _status_code(exc)
         if status in (401, 403):
             raise RiotKeyExpiredError(
-                "Riot API key was rejected -- refresh RIOT_API_KEY in .env."
+                "Riot API key was rejected -- update it in the dashboard's Riot Key panel."
             ) from exc
         if status == 404:
             raise AccountNotFoundError(f"No Riot account found for {game_name}#{tag_line} in {region}.") from exc

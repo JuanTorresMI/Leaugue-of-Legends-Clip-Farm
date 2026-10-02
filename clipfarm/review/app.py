@@ -28,6 +28,10 @@ async def _lifespan(app: FastAPI):
 
     db.init_db()
     logger.info("Database initialized")
+    with db.get_conn() as conn:
+        recovered = db.recover_interrupted_uploads(conn)
+    if recovered:
+        logger.warning("Recovered %d upload(s) interrupted by the last shutdown; they will auto-retry", recovered)
     # Auto-retry items that were recorded before their game finished (mid-game clips etc.).
     start_background_sweep(get_settings().riot.rematch_interval_seconds)
     # Drip-post the best clips (and long-form) on a cadence when auto-post is toggled on.

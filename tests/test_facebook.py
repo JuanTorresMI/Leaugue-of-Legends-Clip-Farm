@@ -22,8 +22,8 @@ class _FakeResp:
 def captured_posts(monkeypatch):
     posts: list[dict] = []
 
-    def fake_post(url, data=None, files=None, headers=None):
-        posts.append({"url": url, "data": data or {}, "files": files})
+    def fake_post(url, data=None, files=None, headers=None, timeout=None):
+        posts.append({"url": url, "data": data or {}, "files": files, "timeout": timeout})
         phase = (data or {}).get("upload_phase")
         if phase == "start":
             return _FakeResp(
@@ -58,3 +58,44 @@ def test_page_video_runs_all_three_phases(tmp_path, captured_posts):
     facebook.publish_page_video(video, "T", "D")
     phases = [p["data"].get("upload_phase") for p in captured_posts]
     assert phases == ["start", "transfer", "finish"]
+
+
+def test_every_graph_call_has_a_timeout(tmp_path, captured_posts):
+    """A stalled connection without a timeout would hang a publish worker forever."""
+    video = tmp_path / "game.mp4"
+    video.write_bytes(b"0123456789")
+    facebook.publish_page_video(video, "title", "desc")
+    assert captured_posts and all(p["timeout"] for p in captured_posts)
+
+
+class _ValidateResp:
+    def __init__(self, status, body=None, text=""):
+        self.status_code = status
+        self._body = body
+        self.text = text
+        self.content = text.encode() or b"x"
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("not json")
+        return self._body
+
+
+def test_validate_returns_page_name(monkeypatch):
+    monkeypatch.setattr(facebook.requests, "get", lambda *a, **kw: _ValidateResp(200, {"name": "My Page"}))
+    assert facebook.validate_credentials("123", "tok") == "My Page"
+
+
+def test_validate_network_error_becomes_auth_error(monkeypatch):
+    def boom(*a, **kw):
+        raise facebook.requests.ConnectionError("offline")
+
+    monkeypatch.setattr(facebook.requests, "get", boom)
+    with pytest.raises(facebook.FacebookAuthError, match="Could not reach Facebook"):
+        facebook.validate_credentials("123", "tok")
+
+
+def test_validate_non_json_error_body_does_not_crash(monkeypatch):
+    monkeypatch.setattr(facebook.requests, "get", lambda *a, **kw: _ValidateResp(502, None, "Bad Gateway"))
+    with pytest.raises(facebook.FacebookAuthError, match="Bad Gateway"):
+        facebook.validate_credentials("123", "tok")

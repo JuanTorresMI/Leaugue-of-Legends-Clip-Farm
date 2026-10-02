@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 TRANSFER_CHUNK_SIZE = 4 * 1024 * 1024  # 4MB
 REELS_DAILY_LIMIT = 30  # Meta's documented cap on API-published Reels per page per 24h
+# Without timeouts a stalled connection hangs a publish worker forever. (connect, read) seconds;
+# byte uploads get a longer read window.
+_API_TIMEOUT = (15, 60)
+_UPLOAD_TIMEOUT = (15, 600)
 
 
 class FacebookAuthError(RuntimeError):
@@ -45,11 +49,19 @@ def _credentials() -> tuple[str, str]:
 
 def validate_credentials(page_id: str, token: str) -> str:
     """Confirm the token can read the Page; returns the Page name. Raises FacebookAuthError."""
-    resp = requests.get(
-        f"{GRAPH_API_BASE}/{page_id}", params={"fields": "name", "access_token": token}
-    )
+    try:
+        resp = requests.get(
+            f"{GRAPH_API_BASE}/{page_id}",
+            params={"fields": "name", "access_token": token},
+            timeout=_API_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise FacebookAuthError(f"Could not reach Facebook to check those credentials: {exc}") from exc
     if resp.status_code != 200:
-        detail = resp.json().get("error", {}).get("message", resp.text[:200]) if resp.content else resp.text
+        try:
+            detail = resp.json().get("error", {}).get("message") or resp.text[:200]
+        except ValueError:  # non-JSON error body
+            detail = resp.text[:200]
         raise FacebookAuthError(f"Facebook rejected those credentials: {detail}")
     return resp.json().get("name", page_id)
 
@@ -79,6 +91,7 @@ def publish_page_video(video_path: Path, title: str, description: str) -> str:
         requests.post(
             f"{GRAPH_API_BASE}/{page_id}/videos",
             data={"upload_phase": "start", "access_token": token, "file_size": file_size},
+            timeout=_API_TIMEOUT,
         )
     )
     video_id = start_resp["video_id"]
@@ -103,6 +116,7 @@ def publish_page_video(video_path: Path, title: str, description: str) -> str:
                         "access_token": token,
                     },
                     files={"video_file_chunk": chunk},
+                    timeout=_UPLOAD_TIMEOUT,
                 )
             )
             start_offset = int(transfer_resp["start_offset"])
@@ -119,6 +133,7 @@ def publish_page_video(video_path: Path, title: str, description: str) -> str:
                 "title": title,
                 "description": description,
             },
+            timeout=_API_TIMEOUT,
         )
     )
     return video_id
@@ -135,6 +150,7 @@ def publish_reel(video_path: Path, description: str) -> str:
         requests.post(
             f"{GRAPH_API_BASE}/{page_id}/video_reels",
             data={"upload_phase": "start", "access_token": token},
+            timeout=_API_TIMEOUT,
         )
     )
     video_id = start_resp["video_id"]
@@ -150,6 +166,7 @@ def publish_reel(video_path: Path, description: str) -> str:
                 "file_size": str(file_size),
             },
             data=f,
+            timeout=_UPLOAD_TIMEOUT,
         )
     if upload_resp.status_code != 200:
         raise RuntimeError(f"Facebook Reels upload error {upload_resp.status_code}: {upload_resp.text[:500]}")
@@ -164,6 +181,7 @@ def publish_reel(video_path: Path, description: str) -> str:
                 "video_state": "PUBLISHED",
                 "description": description,
             },
+            timeout=_API_TIMEOUT,
         )
     )
     quota.record_success("facebook_reels")

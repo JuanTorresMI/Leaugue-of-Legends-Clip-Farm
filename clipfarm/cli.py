@@ -51,7 +51,11 @@ def cmd_check_riot_key(_: argparse.Namespace) -> None:
     from clipfarm.riot.client import get_riot_client
 
     ok = get_riot_client().check_key()
-    print("Riot API key: OK" if ok else "Riot API key: EXPIRED/INVALID -- refresh it in .env")
+    print(
+        "Riot API key: OK"
+        if ok
+        else "Riot API key: EXPIRED/INVALID -- paste a new one in the dashboard's Riot Key panel"
+    )
     sys.exit(0 if ok else 1)
 
 
@@ -65,7 +69,11 @@ def cmd_check_facebook_token(_: argparse.Namespace) -> None:
     from clipfarm.publishers.facebook import check_token
 
     ok = check_token()
-    print("Facebook Page token: OK" if ok else "Facebook Page token: INVALID/MISSING -- check .env")
+    print(
+        "Facebook Page token: OK"
+        if ok
+        else "Facebook Page token: INVALID/MISSING -- update it in the dashboard's Facebook panel"
+    )
     sys.exit(0 if ok else 1)
 
 

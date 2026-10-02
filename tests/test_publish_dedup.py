@@ -119,3 +119,38 @@ def test_file_hash_alone_blocks_a_renamed_copy(temp_db, monkeypatch):
     assert calls == []
     with db.get_conn() as conn:
         assert db.get_publish_targets(conn, mid)[0]["status"] == "duplicate"
+
+
+def test_interrupted_upload_is_recovered_and_can_republish(temp_db, monkeypatch):
+    """A process killed mid-upload leaves the target 'uploading' with an unfinalized ledger
+    reservation. Startup recovery must turn it into a retryable failure, and the retry must
+    actually upload instead of being blocked by its own stale reservation."""
+    calls: list[int] = []
+    _stub_platform(monkeypatch, calls)
+    with db.get_conn() as conn:
+        mid = _seed_item(conn)
+        keys = ["file:hash123", "clip:NA1_1:840000"]
+        db.set_publish_target_status(conn, mid, "youtube", "uploading")
+        assert db.try_reserve_content(conn, "youtube", keys, mid)
+        # A real earlier publish of other content must survive recovery untouched.
+        db.record_published_content(conn, "youtube", ["match:NA1_9"], media_file_id=99, platform_video_id="old")
+
+    with db.get_conn() as conn:
+        assert db.recover_interrupted_uploads(conn) == 1
+        target = db.get_publish_targets(conn, mid)[0]
+        assert target["status"] == "failed"
+        assert "Interrupted" in target["error_message"]
+        assert db.find_published_content(conn, "youtube", keys) is None
+        assert db.find_published_content(conn, "youtube", ["match:NA1_9"]) is not None
+
+    publish_job._run(mid)
+
+    assert calls == [mid]
+    with db.get_conn() as conn:
+        assert db.get_publish_targets(conn, mid)[0]["status"] == "published"
+
+
+def test_recovery_is_a_noop_without_interrupted_uploads(temp_db):
+    with db.get_conn() as conn:
+        _seed_item(conn)
+        assert db.recover_interrupted_uploads(conn) == 0

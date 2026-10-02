@@ -387,6 +387,33 @@ def release_reserved_content(conn: sqlite3.Connection, platform: str, keys: list
         )
 
 
+def recover_interrupted_uploads(conn: sqlite3.Connection) -> int:
+    """Call once at startup, before any publish worker runs. A target still marked 'uploading'
+    means the process died mid-upload (ClipFarm.bat force-restarts a running instance, crashes,
+    reboots). Left alone it is stranded forever: auto-retry only picks up 'failed', Approve
+    stays locked, and its unfinalized ledger reservation would make a retry look like a
+    duplicate. Flip it to 'failed' and drop the reservation so the normal retry path takes over.
+    Returns how many targets were recovered."""
+    stuck = conn.execute(
+        "SELECT media_file_id, platform FROM publish_targets WHERE status = 'uploading'"
+    ).fetchall()
+    for row in stuck:
+        conn.execute(
+            "DELETE FROM published_content WHERE platform = ? AND media_file_id = ? AND platform_video_id IS NULL",
+            (row["platform"], row["media_file_id"]),
+        )
+        conn.execute(
+            """
+            UPDATE publish_targets
+            SET status = 'failed', updated_at = datetime('now'),
+                error_message = 'Interrupted: ClipFarm stopped mid-upload. Will retry automatically.'
+            WHERE media_file_id = ? AND platform = ?
+            """,
+            (row["media_file_id"], row["platform"]),
+        )
+    return len(stuck)
+
+
 def platforms_already_published(conn: sqlite3.Connection, keys: list[str]) -> list[str]:
     """Which platforms have already published any of these content keys (for a dashboard warning)."""
     keys = [k for k in keys if k]

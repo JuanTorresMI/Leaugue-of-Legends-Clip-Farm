@@ -278,7 +278,16 @@ function wireTabs() {
 document.getElementById("refresh-btn").addEventListener("click", async () => {
   const note = document.getElementById("refresh-note");
   note.textContent = "Fetching…";
-  await fetch("/api/metrics/refresh", { method: "POST" });
+  try {
+    const res = await fetch("/api/metrics/refresh", { method: "POST" });
+    if (!res.ok) {
+      note.textContent = (await res.json().catch(() => ({}))).detail || "Refresh failed.";
+      return;
+    }
+  } catch (e) {
+    note.textContent = "Refresh failed: could not reach the server.";
+    return;
+  }
   setTimeout(async () => {
     await loadMetrics();
     note.textContent = "Updated ✓";

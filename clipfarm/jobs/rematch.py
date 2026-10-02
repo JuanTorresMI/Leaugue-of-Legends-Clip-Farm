@@ -6,8 +6,8 @@ finished games, so early items land in status 'awaiting_match'. This sweep repro
   - automatically on a timer while the dashboard runs (see review/app.py lifespan)
   - manually via POST /api/rematch (the dashboard's Re-match button)
 
-Items with 'needs_attention' (expired Riot key) are also swept, so simply fixing the key
-in .env heals the queue on the next pass with no extra steps.
+Items with 'needs_attention' (expired Riot key) are also swept, so simply pasting a fresh key
+in the dashboard heals the queue on the next pass with no extra steps.
 """
 from __future__ import annotations
 
