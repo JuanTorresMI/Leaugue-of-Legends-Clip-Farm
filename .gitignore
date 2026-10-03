@@ -35,3 +35,5 @@ logs/
 !.claude/launch.json
 .vscode/
 .idea/
+# Per-machine config overrides (channel handle etc.)
+config.local.yaml

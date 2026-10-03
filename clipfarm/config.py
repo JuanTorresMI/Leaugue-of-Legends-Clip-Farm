@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_YAML_PATH = PROJECT_ROOT / "config.yaml"
+# Optional, gitignored per-machine overrides (e.g. your channel watermark) merged over config.yaml.
+CONFIG_LOCAL_YAML_PATH = PROJECT_ROOT / "config.local.yaml"
 
 
 class AscentConfig(BaseModel):
@@ -155,7 +157,22 @@ def _load_yaml() -> dict:
             f"config.yaml not found at {CONFIG_YAML_PATH}. Copy the example and edit it."
         )
     with CONFIG_YAML_PATH.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        raw = yaml.safe_load(f) or {}
+    if CONFIG_LOCAL_YAML_PATH.exists():
+        with CONFIG_LOCAL_YAML_PATH.open("r", encoding="utf-8") as f:
+            raw = _deep_merge(raw, yaml.safe_load(f) or {})
+    return raw
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """`override` wins; nested sections merge key-by-key so a local file only lists what it changes."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _resolve(path: Path) -> Path:

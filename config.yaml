@@ -56,8 +56,9 @@ editing:
   hook_caption: true
   hook_seconds: 2.5
   # Small translucent channel handle at the bottom of every clip -- brand recall for viewers
-  # who never open the description. Empty string ("") disables it.
-  watermark_text: "@YourChannel"
+  # who never open the description. Empty string ("") disables it. Set your real handle in
+  # config.local.yaml (gitignored) so it stays out of the repo:  editing: {watermark_text: "@you"}
+  watermark_text: ""
   # Subscribe ask flashed over the final seconds of every clip, right after the payoff --
   # the only moment a Shorts viewer will ever act on it. Empty string ("") disables it.
   subscribe_cta_text: "SUBSCRIBE FOR MORE"

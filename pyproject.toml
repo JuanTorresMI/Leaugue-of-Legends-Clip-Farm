@@ -1,6 +1,7 @@
 [project]
 name = "clipfarm"
 version = "0.1.0"
+license = {text = "MIT"}
 description = "Automated ingest, metadata enrichment, and cross-posting pipeline for League of Legends Ascent recordings"
 requires-python = ">=3.11"
 dependencies = [

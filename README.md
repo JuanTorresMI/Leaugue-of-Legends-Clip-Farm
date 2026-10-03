@@ -371,3 +371,12 @@ Once enabled, full games post as Page videos and clips post as Reels.
 - Until you submit your app for TikTok's audit (2-4 weeks, may need feedback rounds), all posts
   are forced private (`SELF_ONLY`) — this is a TikTok platform restriction, not a bug. Flip
   `tiktok.force_self_only` to `false` in `config.yaml` once your app is approved for public posting.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The bundled Anton font is under the SIL Open Font License
+([assets/fonts/OFL.txt](assets/fonts/OFL.txt)).
+
+LeagueClipFarm isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot
+Games or anyone officially involved in producing or managing Riot Games properties. Riot Games,
+and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
