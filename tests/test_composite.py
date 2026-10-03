@@ -29,10 +29,22 @@ def test_spec_for_full_game_win_uses_display_names():
     assert spec.accent == composite.GREEN
 
 
-def test_spec_for_full_game_loss_is_red():
+def test_spec_for_full_game_loss_leads_with_the_matchup():
+    # "LOSS" on a thumbnail repels the click; a lost game shows the matchup badge instead.
     spec = spec_for_full_game(_match(win=False), rank=None)
-    assert spec.hook == "LOSS"
-    assert spec.accent == composite.RED
+    assert spec.hook == "vs Viego"
+    assert spec.accent == composite.BLUE
+    assert spec_for_full_game(_match(win=False, opponent_champion=None), rank=None).hook == "FULL GAME"
+
+
+def test_spec_from_row_loss_never_says_loss():
+    row = {"kind": "full_game", "champion": "Vi", "win": 0, "kda": "2/9/4", "rank": None, "role": "Jungle",
+           "opponent_champion": "Viego", "queue_type": "Ranked Solo/Duo", "kill_streak": None}
+    spec = composite.spec_from_row(row)
+    assert "LOSS" not in spec.hook
+    assert "2/9/4" not in spec.subtitle            # a losing score is never on the artwork
+    assert spec.subtitle.count("Viego") == 0        # the badge already says "vs Viego"
+    assert "Jungle" in spec.subtitle
 
 
 def test_spec_for_clip_multikill_is_gold():

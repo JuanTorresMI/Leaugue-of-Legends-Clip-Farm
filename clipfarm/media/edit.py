@@ -4,6 +4,13 @@ normalization + fade in/out, all in a single ffmpeg encode.
 Music is chosen at random from the configured music/ folder, which the user fills with their
 own royalty-free tracks (e.g. from YouTube's Audio Library). An empty folder simply skips the
 music layer; the vertical conversion, normalization, and fades still apply.
+
+Overlay styling rules (what keeps a clip from looking machine-made):
+  - Text never pops in or out: every timed overlay fades in and out over a fraction of a second.
+  - The hook caption is the only big element, and it sits on the top blur bar, not over the play.
+  - The subscribe / like asks are small lower-third pills in mixed case ("Subscribe for more"),
+    not shouting caps in the middle of the action, and they are brief.
+  - Nothing generic is ever burned in: if a clip has no kill and no champion, there is no caption.
 """
 from __future__ import annotations
 
@@ -37,10 +44,16 @@ _VERTICAL_BG = "scale=1080:1920,gblur=sigma=20,setsar=1"
 _VERTICAL_FG = "scale=1080:-2,setsar=1"
 _VW, _VH = 1080, 1920  # vertical output dimensions
 
+# How long a timed overlay takes to fade in / out. Short enough to feel snappy, long enough that
+# text never just appears -- the hard cut is the single biggest "auto-generated" tell.
+_FADE_IN_S = 0.25
+_FADE_OUT_S = 0.3
+
 
 def hook_text_for(media_file) -> str | None:
-    """The short punchy line burned over the start of a clip, derived from its match data.
-    None when there's nothing worth saying (falls back to no caption)."""
+    """The short line burned over the start of a clip, derived from its match data. A multi-kill
+    is the hook when there is one; otherwise the champion name (what a scroller recognises).
+    None when there's nothing specific to say -- a generic "WATCH THIS" is worse than nothing."""
     from clipfarm.riot.champion_names import display_name
     from clipfarm.riot.metadata_builder import streak_label
 
@@ -56,12 +69,22 @@ def hook_text_for(media_file) -> str | None:
     champ_name = display_name(champ).upper() if champ else None
     streak = _get("kill_streak")
     if streak and streak >= 5:
-        return "PENTAKILL!"
+        return "PENTAKILL"
     if streak and streak >= 2:
-        return streak_label(streak).upper() + "!"
-    if champ_name:
-        return champ_name
-    return "WATCH THIS"
+        return streak_label(streak).upper()
+    return champ_name
+
+
+def _load_font(font_path: Path, size: int):
+    from PIL import ImageFont
+
+    try:
+        return ImageFont.truetype(str(font_path), size)
+    except OSError:
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
 
 
 def _render_text_png(
@@ -74,13 +97,18 @@ def _render_text_png(
     stroke: int,
     alpha: int = 255,
     uppercase: bool = True,
+    shadow: int = 0,
+    pill: bool = False,
 ) -> Path | None:
-    """Render a text line as a transparent 1080x1920 PNG (Anton, white on a black outline) so
-    it can be overlaid with a plain ffmpeg overlay -- far more robust across platforms than
-    ffmpeg's drawtext escaping. The font shrinks from max_size until the line fits 90% of the
-    width. Returns None if Pillow/font is unavailable."""
+    """Render a text line as a transparent 1080x1920 PNG (Anton, white) so it can be overlaid
+    with a plain ffmpeg overlay -- far more robust across platforms than ffmpeg's drawtext
+    escaping. The font shrinks from max_size until the line fits 90% of the width.
+
+    `shadow` adds a soft blurred drop shadow under the text (reads as graded, not pasted on);
+    `pill` draws a translucent rounded box behind it (the lower-third style used for the asks).
+    Returns None if Pillow/font is unavailable."""
     try:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw, ImageFilter
     except Exception:  # noqa: BLE001
         return None
 
@@ -90,26 +118,40 @@ def _render_text_png(
 
     if uppercase:
         text = text.upper()
-    max_w = int(_VW * 0.9)
+    max_w = int(_VW * (0.8 if pill else 0.9))
     size = max_size
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
+    font = _load_font(font_path, size)
     while size >= min_size:
-        try:
-            font = ImageFont.truetype(str(font_path), size)
-        except OSError:
-            try:
-                font = ImageFont.load_default(size=size)
-            except TypeError:
-                font = ImageFont.load_default()
+        font = _load_font(font_path, size)
         bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
         if bbox[2] - bbox[0] <= max_w:
             break
         size -= 10
 
     bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
-    tw = bbox[2] - bbox[0]
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (_VW - tw) // 2 - bbox[0]
     y = int(_VH * y_frac) - bbox[1]
+
+    if pill:
+        pad_x, pad_y = int(size * 0.55), int(size * 0.32)
+        box = [
+            (_VW - tw) // 2 - pad_x,
+            int(_VH * y_frac) - pad_y,
+            (_VW + tw) // 2 + pad_x,
+            int(_VH * y_frac) + th + pad_y,
+        ]
+        draw.rounded_rectangle(box, radius=(th + 2 * pad_y) // 2, fill=(0, 0, 0, min(alpha, 150)))
+
+    if shadow > 0:
+        layer = Image.new("RGBA", (_VW, _VH), (0, 0, 0, 0))
+        ImageDraw.Draw(layer).text(
+            (x + shadow // 2, y + shadow), text, font=font,
+            fill=(0, 0, 0, int(alpha * 0.75)), stroke_width=stroke, stroke_fill=(0, 0, 0, int(alpha * 0.75)),
+        )
+        canvas.alpha_composite(layer.filter(ImageFilter.GaussianBlur(shadow)))
+        draw = ImageDraw.Draw(canvas)
+
     draw.text(
         (x, y), text, font=font,
         fill=(255, 255, 255, alpha), stroke_width=stroke, stroke_fill=(0, 0, 0, alpha),
@@ -124,32 +166,35 @@ def _render_text_png(
 
 
 def _render_caption_png(text: str, out_path: Path) -> Path | None:
-    """The big hook line burned over the clip's first seconds (upper third, clear of the
-    phone UI at the very top)."""
-    return _render_text_png(text, out_path, y_frac=0.16, max_size=150, min_size=60, stroke=8)
+    """The hook line burned over the clip's first seconds. Sits in the top blur bar (upper
+    sixth, clear of the phone UI at the very top and above the gameplay frame), with a soft
+    shadow instead of a fat outline so it reads as graded rather than stuck on."""
+    return _render_text_png(text, out_path, y_frac=0.16, max_size=120, min_size=56, stroke=4, shadow=10)
 
 
 def _render_watermark_png(text: str, out_path: Path) -> Path | None:
     """A small translucent channel handle shown for the whole clip -- brand recall for viewers
-    who never open the description. Sits at ~74% height: below the action, above the Shorts
-    bottom UI (title/handle overlay), left of nothing (centered, clear of the right icon rail)."""
+    who never open the description. Sits in the bottom blur bar, below the gameplay frame and
+    the lower-third asks, above the Shorts bottom UI (title/handle overlay)."""
     return _render_text_png(
-        text, out_path, y_frac=0.74, max_size=44, min_size=28, stroke=3, alpha=160, uppercase=False
+        text, out_path, y_frac=0.77, max_size=40, min_size=26, stroke=2, alpha=150, uppercase=False
     )
 
 
 def _render_subscribe_png(text: str, out_path: Path) -> Path | None:
-    """The subscribe ask flashed over a clip's final seconds. Same upper-third slot as the hook
-    caption (they never show at the same time: hook = first seconds, this = last seconds), a
-    notch smaller so the payoff moment underneath stays visible."""
-    return _render_text_png(text, out_path, y_frac=0.16, max_size=96, min_size=48, stroke=6)
+    """The subscribe ask over a clip's final seconds: a lower-third pill in mixed case, just
+    under the gameplay frame, where a thumb is already hovering. Never over the action."""
+    return _render_text_png(
+        text, out_path, y_frac=0.685, max_size=58, min_size=36, stroke=0, uppercase=False, pill=True
+    )
 
 
 def _render_like_png(text: str, out_path: Path) -> Path | None:
-    """The like ask flashed briefly mid-clip. Smallest of the three text moments (hook >
-    subscribe > like): it lands during the action, so it has to read as a nudge, not a
-    billboard. Same upper-third slot; the three windows never overlap."""
-    return _render_text_png(text, out_path, y_frac=0.16, max_size=84, min_size=44, stroke=5)
+    """The like ask flashed briefly mid-clip. Same lower-third pill as the subscribe ask, a
+    notch smaller: it lands during the action, so it has to read as a nudge, not a billboard."""
+    return _render_text_png(
+        text, out_path, y_frac=0.685, max_size=52, min_size=34, stroke=0, uppercase=False, pill=True
+    )
 
 
 def pick_music() -> Path | None:
@@ -174,6 +219,17 @@ def _fade_suffix(kind: str, duration: float, fin: float, fout: float) -> str:
     if fout > 0:
         parts.append(f",{name}=t=out:st={max(duration - fout, 0):.2f}:d={fout:.2f}")
     return "".join(parts)
+
+
+def _overlay_fades(start: float, end: float) -> str:
+    """Alpha fade-in at `start` and fade-out ending at `end` for a looped PNG input. The PNG
+    stream's clock runs alongside the main video from 0, so absolute times work directly."""
+    fin = min(_FADE_IN_S, max(end - start, 0.1) / 2)
+    fout = min(_FADE_OUT_S, max(end - start, 0.1) / 2)
+    return (
+        f"format=rgba,fade=t=in:st={start:.2f}:d={fin:.2f}:alpha=1,"
+        f"fade=t=out:st={max(end - fout, start):.2f}:d={fout:.2f}:alpha=1"
+    )
 
 
 def prepared_clip(video_path: Path, hook_text: str | None = None) -> Path:
@@ -204,7 +260,7 @@ def prepared_clip(video_path: Path, hook_text: str | None = None) -> Path:
 
 def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = None) -> Path:
     """Produce the upload-ready vertical clip with music/normalization/fades (+ optional hook
-    caption) applied."""
+    caption and lower-third asks) applied."""
     settings = get_settings()
     ed = settings.editing
     ffmpeg = str(settings.ascent.ffmpeg_path)
@@ -229,23 +285,27 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
         next_index += 1
         logger.info("Editing clip with music track: %s", music.name)
 
+    # Every timed text overlay: (input index, filter chain applied to the PNG stream before the
+    # overlay, overlay enable expression). Built in display order; the watermark is untimed.
+    timed: list[tuple[int, str, str]] = []
+    temp_pngs: list[Path] = []
+
     # Optional hook caption: rendered to a PNG (robust) and overlaid for the first N seconds.
-    caption_png: Path | None = None
-    caption_index: int | None = None
     if ed.hook_caption and hook_text:
         caption_png = _render_caption_png(hook_text, output_path.with_suffix(".caption.png"))
         if caption_png is not None:
+            temp_pngs.append(caption_png)
             inputs += ["-loop", "1", "-t", f"{ed.hook_seconds:.2f}", "-i", str(caption_png)]
-            caption_index = next_index
+            timed.append((next_index, _overlay_fades(0.0, ed.hook_seconds), f"lte(t,{ed.hook_seconds:.2f})"))
             next_index += 1
 
     # Optional channel-handle watermark, shown for the whole clip. The looped PNG input is
     # bounded to the clip's duration so the graph can't run past the main stream.
-    watermark_png: Path | None = None
     watermark_index: int | None = None
     if ed.watermark_text.strip():
         watermark_png = _render_watermark_png(ed.watermark_text.strip(), output_path.with_suffix(".wm.png"))
         if watermark_png is not None:
+            temp_pngs.append(watermark_png)
             wm_seconds = duration if duration > 0 else 600
             inputs += ["-loop", "1", "-t", f"{wm_seconds:.2f}", "-i", str(watermark_png)]
             watermark_index = next_index
@@ -253,61 +313,53 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
 
     # Optional subscribe ask over the final seconds. Needs a known duration (the enable window
     # is anchored to the end) and a clip long enough that it can't overlap the hook caption.
-    cta_png: Path | None = None
-    cta_index: int | None = None
-    cta_start = 0.0
+    cta_start: float | None = None
     if (
         ed.subscribe_cta_text.strip()
         and duration > ed.hook_seconds + ed.subscribe_cta_seconds + 3
     ):
         cta_png = _render_subscribe_png(ed.subscribe_cta_text.strip(), output_path.with_suffix(".cta.png"))
         if cta_png is not None:
+            temp_pngs.append(cta_png)
             cta_start = duration - ed.subscribe_cta_seconds
             inputs += ["-loop", "1", "-t", f"{duration:.2f}", "-i", str(cta_png)]
-            cta_index = next_index
+            timed.append((next_index, _overlay_fades(cta_start, duration), f"gte(t,{cta_start:.2f})"))
             next_index += 1
 
-    # Optional like ask flashed mid-clip, near the action's peak. Likes are the one ranking
-    # signal a viewer can give without leaving the video, and our best performers are exactly
-    # the ones that collected them -- but nobody taps unless asked. Only rendered when its
-    # window clears both the hook (start) and the subscribe ask (end) with a second to spare.
-    like_png: Path | None = None
-    like_index: int | None = None
-    like_start = 0.0
+    # Optional like ask flashed mid-clip, near the action's peak. Only rendered when its window
+    # clears both the hook (start) and the subscribe ask (end) with a second to spare.
     if ed.like_cta_text.strip() and duration > 0:
         like_start = duration * 0.55
-        cta_begin = duration - ed.subscribe_cta_seconds if cta_index is not None else duration
-        if (
-            like_start > ed.hook_seconds + 1.0
-            and like_start + ed.like_cta_seconds < cta_begin - 1.0
-        ):
+        like_end = like_start + ed.like_cta_seconds
+        cta_begin = cta_start if cta_start is not None else duration
+        if like_start > ed.hook_seconds + 1.0 and like_end < cta_begin - 1.0:
             like_png = _render_like_png(ed.like_cta_text.strip(), output_path.with_suffix(".like.png"))
             if like_png is not None:
+                temp_pngs.append(like_png)
                 inputs += ["-loop", "1", "-t", f"{duration:.2f}", "-i", str(like_png)]
-                like_index = next_index
+                timed.append((
+                    next_index,
+                    _overlay_fades(like_start, like_end),
+                    f"between(t,{like_start:.2f},{like_end:.2f})",
+                ))
                 next_index += 1
 
-    # --- video chain: blurred bg + crisp fg, then caption/watermark overlays, then fades ---
+    # --- video chain: blurred bg + crisp fg, then faded text overlays, watermark, then fades ---
     base = (
         f"[0:v]{_VERTICAL_BG}[bg];"
         f"[0:v]{_VERTICAL_FG}[fg];"
         f"[bg][fg]overlay=(W-w)/2:(H-h)/2"
     )
+    pre: list[str] = []  # per-overlay PNG preprocessing (alpha fades)
     overlays: list[str] = []
-    if caption_index is not None:
-        overlays.append(f"[{caption_index}:v]overlay=0:0:enable='lte(t,{ed.hook_seconds:.2f})'")
-    if cta_index is not None:
-        overlays.append(f"[{cta_index}:v]overlay=0:0:enable='gte(t,{cta_start:.2f})'")
-    if like_index is not None:
-        overlays.append(
-            f"[{like_index}:v]overlay=0:0:"
-            f"enable='between(t,{like_start:.2f},{like_start + ed.like_cta_seconds:.2f})'"
-        )
+    for i, (index, fades, enable) in enumerate(timed):
+        pre.append(f"[{index}:v]{fades}[t{i}]")
+        overlays.append(f"[t{i}]overlay=0:0:enable='{enable}'")
     if watermark_index is not None:
         overlays.append(f"[{watermark_index}:v]overlay=0:0")
 
     if overlays:
-        steps = [f"{base}[v0]"]
+        steps = [*pre, f"{base}[v0]"]
         for i, overlay in enumerate(overlays):
             fade = vfade if i == len(overlays) - 1 else ""  # fades apply after the last overlay
             out_label = "[v]" if i == len(overlays) - 1 else f"[v{i + 1}]"
@@ -340,12 +392,6 @@ def prepare_clip(input_path: Path, output_path: Path, hook_text: str | None = No
             ]
         )
     finally:
-        if caption_png is not None:
-            caption_png.unlink(missing_ok=True)
-        if watermark_png is not None:
-            watermark_png.unlink(missing_ok=True)
-        if cta_png is not None:
-            cta_png.unlink(missing_ok=True)
-        if like_png is not None:
-            like_png.unlink(missing_ok=True)
+        for png in temp_pngs:
+            png.unlink(missing_ok=True)
     return output_path

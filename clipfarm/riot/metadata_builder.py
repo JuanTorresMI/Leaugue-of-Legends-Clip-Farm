@@ -2,17 +2,23 @@
 
 Everything here is a *draft* -- the dashboard allows editing before anything posts.
 
-Discoverability principles baked in:
-- The hook (champion + what happened) leads the title; rank/role context follows.
-- Kill-clip titles rotate through three A/B hook styles ("hype" / "wait" / "why"),
-  picked deterministically per clip (seeded by match id + kill timestamp) so a batch of
-  uploads doesn't read like a bot wrote it, regenerating drafts is stable, and — because the
-  chosen style is stored on the row — the metrics dashboard can measure which style earns
-  the most views and retention.
-- Descriptions front-load searchable phrasing in the first two lines (what YouTube weighs
-  most), then a hashtag block.
-- A separate `tags` list feeds YouTube's tags API field (500-char budget) with multi-word
-  search phrases that don't belong in visible hashtags.
+What the drafts optimise for (and what they deliberately avoid):
+- **Read like a person typed them.** No "#shorts" bolted onto every title (YouTube detects the
+  format from the video itself), no em dashes, no wall of emoji, no shouting HYPE WORDS. One
+  emoji at most, and only on the direct-hype variant. A feed full of identical templated titles
+  is the quickest way to read as a clip farm, which both viewers and the ranking system punish.
+- **Search phrases first.** Champion name leads, the matchup ("Draven vs Jinx") is spelled out
+  wherever we know it, and the rank/role phrase people actually type ("Emerald Jungle") rides
+  along when it fits. Full games keep "Full Gameplay" because that is the literal query.
+- **Kill-clip titles rotate through three hook styles** ("hype" / "wait" / "why"), picked
+  deterministically per clip (seeded by match id + kill timestamp) so a batch of uploads
+  doesn't all look the same, regeneration is stable, and -- because the chosen style is stored
+  on the row -- the metrics dashboard can measure which style earns the most views.
+- **Descriptions front-load the searchable sentence** (what YouTube weighs most), then one
+  plain subscribe line, then a small hashtag block. The first three hashtags show above the
+  title on YouTube, so those are the champion and the game, not "#Shorts".
+- A separate `tags` list feeds YouTube's tags field (500-char budget) with the long-tail and
+  matchup phrases that don't belong in visible hashtags.
 """
 from __future__ import annotations
 
@@ -24,21 +30,23 @@ from clipfarm.riot.champion_names import display_name, tag_name
 
 KILL_STREAK_NAMES = {1: "Kill", 2: "Double Kill", 3: "Triple Kill", 4: "Quadra Kill", 5: "Penta Kill"}
 
-_SINGLE_KILL_VERBS = ["outplays", "picks off", "deletes", "1-SHOTS", "punishes", "catches out", "destroys"]
+_SINGLE_KILL_VERBS = ["outplays", "picks off", "deletes", "one-shots", "punishes", "catches out", "runs down"]
 
-# Scroll-stopping adjectives + emoji for the streak hooks. Emoji noticeably lift CTR on the
-# Shorts shelf; the adjective adds emotion without lying about what happened.
+# A single emoji on the direct-hype variant only. Real LoL clip titles use one or none; a row
+# of them is the tell of a generated title.
 _STREAK_EMOJI = {2: "⚔️", 3: "🔥", 4: "😳", 5: "😱"}
-_HYPE_WORDS = ["INSANE", "DISGUSTING", "UNREAL", "CRAZY", "CLEAN"]
 
 YOUTUBE_TITLE_LIMIT = 100
+# The Shorts feed shows roughly two lines of title; past this the rank/role suffix is dropped
+# rather than letting the hook get cut off. (The hard limit above is still enforced.)
+SHORTS_TITLE_TARGET = 80
 YOUTUBE_TAGS_CHAR_BUDGET = 480  # stay under YouTube's 500-char tags limit with margin
 
-# One consistent call-to-action across every upload. Subscribers -> watch-time -> the 1,000-sub
-# + watch-hour thresholds that unlock YouTube Partner monetization; a fixed CTA also trains the
-# audience to expect a daily posting cadence.
+
 def _cta(champ: str) -> str:
-    return f"👉 SUBSCRIBE for daily {champ} plays — new clips every day!"
+    """One quiet subscribe line. It is the same ask every time (consistency trains the
+    audience) but phrased like a creator, not a banner."""
+    return f"Subscribe for more {champ}."
 
 
 def streak_label(streak: int) -> str:
@@ -55,21 +63,17 @@ def _pick_verb(seed: str) -> str:
     return _SINGLE_KILL_VERBS[zlib.crc32(seed.encode()) % len(_SINGLE_KILL_VERBS)]
 
 
-def _pick_hype(seed: str) -> str:
-    return _HYPE_WORDS[zlib.crc32(seed.encode()) % len(_HYPE_WORDS)]
-
-
 # The A/B title experiment. Each kill clip is assigned one of three hook styles; the choice is
 # stored on the row (media_files.title_variant) so the metrics dashboard can compare avg views
 # and retention per style and we learn which hook actually stops the scroll:
-#   hype -- direct hype statement (the original style): "Draven INSANE TRIPLE KILL vs X 🔥"
-#   wait -- curiosity gap / payoff tease:               "Wait for the TRIPLE KILL 🔥 Draven vs X"
-#   why  -- lesson framing (LoL viewers love these):    "This is why you don't fight Draven 🔥"
+#   hype -- direct statement:        "Draven Triple Kill vs Jinx & Lulu 🔥 | Emerald ADC"
+#   wait -- curiosity gap / tease:   "Wait for the triple kill… Draven vs Jinx & Lulu"
+#   why  -- lesson / matchup frame:  "This is why you don't fight Draven in Emerald"
 _TITLE_VARIANTS = ("hype", "wait", "why")
 
 
 def _pick_variant(seed: str) -> str:
-    # Salted so the variant choice is independent of the verb/hype-word picks on the same seed.
+    # Salted so the variant choice is independent of the verb pick on the same seed.
     return _TITLE_VARIANTS[zlib.crc32(f"variant:{seed}".encode()) % len(_TITLE_VARIANTS)]
 
 
@@ -104,6 +108,15 @@ def _tier(rank: str | None) -> str | None:
     return rank.split()[0] if rank else None
 
 
+def _with_context(hook: str, context: str) -> str:
+    """Append the ' | Emerald Jungle' search phrase when the title stays short enough to read
+    in the Shorts feed; otherwise the hook stands alone (the description still carries it)."""
+    if not context:
+        return _fit_title(hook)
+    full = f"{hook} | {context}"
+    return _fit_title(full if len(full) <= SHORTS_TITLE_TARGET else hook)
+
+
 def _base_tags(match: MatchContext, rank: str | None) -> list[str]:
     champ = display_name(match.champion).lower()
     tags = [
@@ -124,6 +137,17 @@ def _base_tags(match: MatchContext, rank: str | None) -> list[str]:
     return tags
 
 
+def _clip_hashtags(champ_tag: str, streak_hashtag: str | None) -> list[str]:
+    """Four or five tight hashtags. YouTube surfaces the first three above the title, so lead
+    with the champion and the game (what a searcher recognises), keep the streak for niche
+    discovery, and put the format signal last -- it still counts, it just isn't a headline."""
+    tags = [f"#{champ_tag}", "#LeagueOfLegends"]
+    if streak_hashtag:
+        tags.append(streak_hashtag)
+    tags += ["#LoLClips", "#Shorts"]
+    return tags
+
+
 def build_clip_metadata(
     match: MatchContext | None,
     highlight: ClipHighlight | None,
@@ -132,13 +156,13 @@ def build_clip_metadata(
 ) -> DraftMetadata:
     if match is None:
         return DraftMetadata(
-            title=f"INSANE League of Legends Highlight 🔥 #shorts ({recorded_at:%b %d})",
+            title=f"League of Legends highlight ({recorded_at:%b %d})",
             description=(
-                "INSANE League of Legends highlight from my own ranked games. 🔥\n"
-                f"{_cta('League')}\n\n"
-                "#Shorts #LeagueOfLegends #LoL #Gaming"
+                "A highlight from one of my own ranked games.\n"
+                f"{_cta('League of Legends')}\n\n"
+                "#LeagueOfLegends #LoLClips #Shorts"
             ),
-            hashtags=["#Shorts", "#LeagueOfLegends", "#LoL", "#Gaming"],
+            hashtags=["#LeagueOfLegends", "#LoLClips", "#Shorts"],
             tags=["league of legends", "lol", "league of legends shorts", "lol clips",
                   "league of legends best plays", "lol montage"],
         )
@@ -146,75 +170,74 @@ def build_clip_metadata(
     champ = display_name(match.champion)
     champ_tag = tag_name(match.champion)
     tier = _tier(rank)
-    context_bits = " ".join(bit for bit in [tier, match.role] if bit)  # e.g. "Emerald Jungle"
+    context = " ".join(bit for bit in [tier, match.role] if bit)  # e.g. "Emerald Jungle"
+    in_tier = f" in {tier}" if tier else ""
 
     variant: str | None = None
+    matchup_tags: list[str] = []
     if highlight is None:
-        hook = f"{champ} INSANE Highlight 🔥"
+        role_bit = f" {match.role}" if match.role else ""
+        title = _with_context(f"{champ}{role_bit} highlight", tier or "")
         what_happened = f"{champ} highlight from a {match.queue_type} game"
         streak_hashtag = None
         streak_tag = None
     elif highlight.kill_streak >= 5:
         seed = f"{match.match_id}:{highlight.first_kill_ms or recorded_at.isoformat()}"
         variant = _pick_variant(seed)
-        hook = {
-            "hype": f"{champ} 1v5 PENTAKILL 😱",
-            "wait": f"Wait for the PENTAKILL 😱 {champ}",
-            "why": f"This is why you never dive {champ} 😱 PENTAKILL",
+        title = {
+            "hype": _with_context(f"{champ} PENTAKILL 😱", context),
+            "wait": _with_context(f"Wait for the PENTAKILL… {champ}", context),
+            "why": _fit_title(f"This is why you don't dive {champ}{in_tier} (PENTAKILL)"),
         }[variant]
-        what_happened = f"{champ} gets a 1v5 PENTAKILL in {match.queue_type}"
+        what_happened = f"{champ} pentakill in {match.queue_type}"
         streak_hashtag = "#Pentakill"
         streak_tag = "pentakill"
     elif highlight.kill_streak >= 2:
-        streak = streak_label(highlight.kill_streak).upper()
+        streak = streak_label(highlight.kill_streak)
         victims = _victims_phrase(highlight.victim_champions)
         emoji = _STREAK_EMOJI.get(highlight.kill_streak, "🔥")
         seed = f"{match.match_id}:{highlight.first_kill_ms or recorded_at.isoformat()}"
         variant = _pick_variant(seed)
-        hype = _pick_hype(f"{match.match_id}:{highlight.kill_streak}")
-        hook = {
-            "hype": f"{champ} {hype} {streak} vs {victims} {emoji}",
-            "wait": f"Wait for the {streak} {emoji} {champ} vs {victims}",
-            "why": f"This is why you don't fight {champ} {emoji} {streak}",
+        title = {
+            "hype": _with_context(f"{champ} {streak} vs {victims} {emoji}", context),
+            "wait": _with_context(f"Wait for the {streak.lower()}… {champ} vs {victims}", context),
+            "why": _fit_title(f"This is why you don't fight {champ}{in_tier} ({streak})"),
         }[variant]
-        what_happened = f"{champ} gets a {streak_label(highlight.kill_streak)} on {victims} in {match.queue_type}"
-        streak_hashtag = f"#{streak_label(highlight.kill_streak).replace(' ', '')}"
-        streak_tag = streak_label(highlight.kill_streak).lower()
+        what_happened = f"{champ} {streak.lower()} on {victims} in {match.queue_type}"
+        streak_hashtag = f"#{streak.replace(' ', '')}"
+        streak_tag = streak.lower()
+        if highlight.victim_champions:
+            matchup_tags.append(f"{champ.lower()} vs {display_name(highlight.victim_champions[0]).lower()}")
     else:
         victim = display_name(highlight.victim_champions[0]) if highlight.victim_champions else "the enemy"
         seed = f"{match.match_id}:{victim}:{recorded_at.isoformat()}"
         variant = _pick_variant(seed)
         verb = _pick_verb(seed)
-        hook = {
-            "hype": f"{champ} {verb} {victim} 💀",
-            "wait": f"Wait for it… {champ} vs {victim} 😳",
-            "why": f"This is why you don't 1v1 {champ} 💀",
+        title = {
+            "hype": _with_context(f"{champ} {verb} {victim} 💀", context),
+            "wait": _with_context(f"Wait for it… {champ} vs {victim}", context),
+            # The matchup phrase is what people search ("draven vs jinx"); frame it as a lesson.
+            "why": _with_context(f"How to punish {victim} as {champ}", context),
         }[variant]
         what_happened = f"{champ} {verb} {victim} in {match.queue_type}"
         streak_hashtag = None
         streak_tag = "solo kill"
+        if highlight.victim_champions:
+            matchup_tags.append(f"{champ.lower()} vs {victim.lower()}")
 
-    title_context = f" | {context_bits}" if context_bits else ""
-    title = _fit_title(f"{hook}{title_context} #shorts")
+    hashtags = _clip_hashtags(champ_tag, streak_hashtag)
 
-    # 3-5 tightly-relevant hashtags outperform a long wall on Shorts. Lead with #Shorts (the
-    # format signal), then the champion + streak (niche discovery), then broad reach.
-    hashtags = ["#Shorts", f"#{champ_tag}"]
-    if streak_hashtag:
-        hashtags.append(streak_hashtag)
-    hashtags += ["#LeagueOfLegends", "#LoL", "#Gaming"]
-
-    rank_note = f" ({rank} Ranked)" if rank else ""
-    patch_note = f", Patch {match.patch}" if match.patch else ""
+    detail_bits = [bit for bit in [rank, f"patch {match.patch}" if match.patch else None] if bit]
+    details = f" ({', '.join(detail_bits)})" if detail_bits else ""
+    role_bit = f" {match.role}" if match.role else ""
     description = (
-        f"{what_happened}{rank_note}{patch_note}. 🔥\n"
-        f"{_cta(champ)}\n"
-        f"{champ}{f' {match.role}' if match.role else ''} clips from my own games -- "
-        f"full gameplay on the channel.\n\n" + " ".join(hashtags)
+        f"{what_happened}{details}.\n"
+        f"{champ}{role_bit} clips from my own ranked games, full games are on the channel too.\n"
+        f"{_cta(champ)}\n\n" + " ".join(hashtags)
     )
 
-    champ_lower = display_name(match.champion).lower()
-    tags = _base_tags(match, rank) + [
+    champ_lower = champ.lower()
+    tags = _base_tags(match, rank) + matchup_tags + [
         "league of legends shorts",
         "lol shorts",
         "lol clips",
@@ -224,7 +247,6 @@ def build_clip_metadata(
         f"{champ_lower} best plays",
         "league of legends best plays",
         "lol montage",
-        "league of legends 2026",
         "best league of legends plays",
     ]
     if streak_tag:
@@ -244,11 +266,9 @@ def build_full_game_metadata(
     tier = _tier(rank)
     result = "WIN" if match.win else "LOSS"
 
-    # Title principles (the old "Champ vs Champ Role - Platinum II Ranked Solo/Duo LOSS 4/8/12"
-    # format sat at ~0 views): lead with what people actually search (the matchup + role),
-    # keep the "Full Gameplay" search phrase, and only show the score when it's a brag --
-    # a KDA hook on a win earns the click, "LOSS 4/8/12" repels it. Queue/result/KDA all
-    # stay in the description for search; the title is for humans.
+    # Lead with what people actually search (the matchup + role), keep the "Full Gameplay"
+    # search phrase, and only show the score when it's a brag -- a KDA hook on a win earns the
+    # click, "LOSS 4/8/12" repels it. Queue/result/KDA all stay in the description for search.
     if match.opponent_champion:
         matchup = f"{champ} vs {display_name(match.opponent_champion)}"
     else:
@@ -260,16 +280,16 @@ def build_full_game_metadata(
     kda_hook = f"{match.kda} " if match.win and match.kills > 0 else ""
     tier_bit = f"{tier} " if tier else ""
     patch_bit = f" (Patch {match.patch})" if match.patch else ""
-    title = _fit_title(f"{kda_hook}{matchup}{role_bit} — {tier_bit}Full Gameplay{patch_bit}")
+    title = _fit_title(f"{kda_hook}{matchup}{role_bit} | {tier_bit}Full Gameplay{patch_bit}")
 
-    hashtags = ["#LeagueOfLegends", "#LoL", f"#{champ_tag}"]
+    hashtags = ["#LeagueOfLegends", f"#{champ_tag}"]
     if match.opponent_champion:
         hashtags.append(f"#{tag_name(match.opponent_champion)}")
     if match.role:
         hashtags.append(f"#{match.role}")
     if tier:
         hashtags.append(f"#{tier}")
-    hashtags += ["#Gaming", "#FullGameplay"]
+    hashtags.append("#FullGameplay")
 
     matchup_line = (
         f"{champ} vs {display_name(match.opponent_champion)} {match.role or ''} full game".strip()
@@ -277,21 +297,22 @@ def build_full_game_metadata(
         else f"{champ} full game"
     )
     rank_note = f" at {rank}" if rank else ""
-    patch_note = f" on Patch {match.patch}" if match.patch else ""
+    patch_note = f" on patch {match.patch}" if match.patch else ""
     description = (
         f"{matchup_line} in {match.queue_type}{rank_note}{patch_note}. "
         f"Result: {result}, KDA {match.kda}.\n"
-        f"{_cta(champ)}\n"
-        f"Unedited gameplay from my own games -- highlights on the channel.\n\n" + " ".join(hashtags)
+        f"Unedited from my own games. Highlights from this game and more {champ} are on the channel.\n"
+        f"{_cta(champ)}\n\n" + " ".join(hashtags)
     )
 
     tags = _base_tags(match, rank) + [
         "full gameplay",
-        f"{display_name(match.champion).lower()} full game",
+        f"{champ.lower()} full game",
         "league of legends full game",
     ]
     if match.opponent_champion:
         opp = display_name(match.opponent_champion).lower()
-        tags.append(f"{display_name(match.champion).lower()} vs {opp}")
+        tags.append(f"{champ.lower()} vs {opp}")
+        tags.append(f"{champ.lower()} vs {opp} {match.role.lower()}" if match.role else f"{opp} matchup")
 
     return DraftMetadata(title=title, description=description, hashtags=hashtags, tags=_cap_tags(tags))

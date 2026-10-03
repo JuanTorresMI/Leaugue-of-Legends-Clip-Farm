@@ -50,7 +50,7 @@ def test_content_keys_accepts_objects_too():
 
 
 def test_hook_text_from_streak_and_champion():
-    assert hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 5}) == "PENTAKILL!"
-    assert hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 3}) == "TRIPLE KILL!"
+    assert hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 5}) == "PENTAKILL"
+    assert hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 3}) == "TRIPLE KILL"
     assert hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 1}) == "JARVAN IV"
     assert hook_text_for({"kind": "full_game", "champion": "JarvanIV", "kill_streak": None}) is None

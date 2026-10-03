@@ -83,6 +83,31 @@ def _edit_settings(tmp_path, **overrides):
     return _Settings()
 
 
+def test_hook_text_prefers_the_streak_then_the_champion_and_never_a_generic_line():
+    assert edit.hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 5}) == "PENTAKILL"
+    assert edit.hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 3}) == "TRIPLE KILL"
+    assert edit.hook_text_for({"kind": "clip", "champion": "JarvanIV", "kill_streak": 1}) == "JARVAN IV"
+    # No kill and no champion: burn nothing rather than a "WATCH THIS" that screams template.
+    assert edit.hook_text_for({"kind": "clip", "champion": None, "kill_streak": None}) is None
+    assert edit.hook_text_for({"kind": "full_game", "champion": "Vi", "kill_streak": None}) is None
+
+
+def test_render_pill_png(tmp_path, monkeypatch):
+    class _Settings:
+        project_root = tmp_path
+
+    monkeypatch.setattr(edit, "get_settings", lambda: _Settings())
+    out = edit._render_subscribe_png("Subscribe for more", tmp_path / "cta.png")
+    assert out is not None and out.exists()
+    from PIL import Image
+
+    with Image.open(out) as img:
+        assert img.size == (1080, 1920)
+        # Something opaque-ish sits in the lower third (the pill), nothing at the very top.
+        assert img.getpixel((540, int(1920 * 0.70)))[3] > 0
+        assert img.getpixel((540, 40))[3] == 0
+
+
 def test_prepare_clip_filter_includes_watermark(tmp_path, monkeypatch):
     """The watermark PNG becomes a bounded looped input overlaid for the whole clip."""
     captured = {}
@@ -114,6 +139,23 @@ def test_prepare_clip_flashes_subscribe_cta_at_the_end(tmp_path, monkeypatch):
     edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4")
     fc = captured["args"][captured["args"].index("-filter_complex") + 1]
     assert "overlay=0:0:enable='gte(t,31.80)'" in fc  # 34.3 - 2.5: only the final seconds
+    # The ask fades in at its start and out before the clip ends -- never a hard pop.
+    assert "fade=t=in:st=31.80:d=0.25:alpha=1" in fc
+    assert "fade=t=out:st=34.00:d=0.30:alpha=1" in fc
+
+
+def test_prepare_clip_hook_caption_fades_in_and_out(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(edit, "get_settings", lambda: _edit_settings(tmp_path, hook_caption=True))
+    monkeypatch.setattr(edit, "duration_seconds", lambda p: 34.3)
+    monkeypatch.setattr(edit, "_run", lambda args: captured.setdefault("args", args))
+
+    edit.prepare_clip(tmp_path / "in.mp4", tmp_path / "out.mp4", hook_text="TRIPLE KILL")
+    args = captured["args"]
+    fc = args[args.index("-filter_complex") + 1]
+    assert "[1:v]format=rgba,fade=t=in:st=0.00:d=0.25:alpha=1,fade=t=out:st=2.20:d=0.30:alpha=1[t0]" in fc
+    assert "[v0][t0]overlay=0:0:enable='lte(t,2.50)'[v]" in fc
+    assert not (tmp_path / "out.caption.png").exists()  # temp PNG cleaned up after the render
 
 
 def test_prepare_clip_skips_cta_on_short_clips(tmp_path, monkeypatch):

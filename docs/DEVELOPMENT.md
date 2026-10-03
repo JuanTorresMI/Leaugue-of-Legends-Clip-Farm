@@ -33,9 +33,12 @@ your edits — no build step, no bundler, plain refresh.
 
 ## Testing conventions
 
-- **No network, no credentials, no real DB.** Tests monkeypatch `db.get_settings` to a tmp-path
-  SQLite file (see the `temp_db` fixture pattern in `tests/test_analysis.py`) and fake HTTP with
-  stub objects (see `tests/test_facebook_stats.py`). Riot data comes from
+- **No network, no credentials, no real DB.** An autouse fixture in `tests/conftest.py` gives
+  every test dummy secrets, ignores your real `.env`, and points `PROJECT_ROOT` at a temp dir, so
+  the suite runs on a fresh clone and never reads your credentials or writes into `data/`. Tests
+  that need a DB additionally monkeypatch `db.get_settings` to a tmp-path SQLite file (see the
+  `temp_db` fixture pattern in `tests/test_analysis.py`) and fake HTTP with stub objects (see
+  `tests/test_facebook_stats.py`). Riot data comes from
   `tests/fixtures/sample_match_detail.json` / `sample_timeline.json`.
 - **One test file per module** (`test_analysis.py` ↔ `metrics/analysis.py`), with a module
   docstring saying what behavior the file locks down.

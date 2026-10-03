@@ -3,7 +3,30 @@ from pathlib import Path
 
 import pytest
 
+from clipfarm import config
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_settings(monkeypatch, tmp_path):
+    """Make every test independent of the developer's machine.
+
+    - Required secrets get dummy values and the real .env is ignored, so the suite runs on a
+      fresh clone (CI) and never touches a real Riot/Facebook credential.
+    - PROJECT_ROOT is pointed at a per-test temp dir, so the JSON stores (accounts.json,
+      facebook.json, riot_key.txt, ...) and the default database land there instead of in the
+      repo's data/ folder.
+    - The settings cache is cleared around each test so no test sees another's settings.
+    """
+    monkeypatch.setenv("RIOT_API_KEY", "RGAPI-test-key")
+    monkeypatch.setenv("RIOT_GAME_NAME", "TestPlayer")
+    monkeypatch.setenv("RIOT_TAG_LINE", "NA1")
+    monkeypatch.setitem(config.Secrets.model_config, "env_file", None)
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+    config.get_settings.cache_clear()
+    yield
+    config.get_settings.cache_clear()
 
 
 class FakeRiotClient:

@@ -210,6 +210,18 @@ _YOUTUBE_ONLY_TAGS = {"#shorts", "#youtubeshorts", "#ytshorts"}
 _YOUTUBE_ONLY_TAG_RE = re.compile(r"\s*#(?:shorts|youtubeshorts|ytshorts)\b", re.IGNORECASE)
 
 
+# The word only (not "subscribers"), swapped with its casing kept: SUBSCRIBE -> FOLLOW,
+# Subscribe -> Follow, subscribe -> follow.
+_SUBSCRIBE_RE = re.compile(r"\bsubscribe\b", re.IGNORECASE)
+
+
+def _follow_word(match: re.Match) -> str:
+    word = match.group(0)
+    if word.isupper():
+        return "FOLLOW"
+    return "Follow" if word[0].isupper() else "follow"
+
+
 def _is_hashtag_line(line: str) -> bool:
     tokens = line.split()
     return bool(tokens) and all(t.startswith("#") for t in tokens)
@@ -223,7 +235,7 @@ def facebook_description(description: str, hashtags: list[str]) -> str:
     the body, merge them with `hashtags` (case-insensitive dedupe, order kept, YouTube-only tags
     dropped, anything already used inline in the body skipped), and append one clean line."""
     # On a Facebook Page the ask is Follow, not Subscribe.
-    lines = description.replace("SUBSCRIBE", "FOLLOW").rstrip().splitlines()
+    lines = _SUBSCRIBE_RE.sub(_follow_word, description).rstrip().splitlines()
     trailing: list[str] = []
     while lines and (_is_hashtag_line(lines[-1]) or not lines[-1].strip()):
         trailing = lines.pop().split() + trailing

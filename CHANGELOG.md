@@ -7,6 +7,52 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ---
 
+## 2026-10-03
+
+### Changed — titles, descriptions, and hashtags rewritten to read like a person (SEO pass)
+- Every title shape dropped the tells of a generated title: the `#shorts` suffix (YouTube
+  detects the format from the video; the tag just looks spammy), em dashes, stacked emoji
+  (now at most one, only on the direct-hype variant), and SHOUTED hype adjectives (`INSANE`,
+  `DISGUSTING`, …). The rank/role phrase (`| Emerald ADC`) is kept for search but dropped
+  before the hook would be truncated in the Shorts feed's two lines.
+- The three A/B hook styles now differ in sentence *shape*, not just word choice:
+  `Draven Triple Kill vs Jinx & Lulu 🔥 | Emerald ADC` /
+  `Wait for the triple kill… Draven vs Jinx & Lulu | Emerald ADC` /
+  `This is why you don't fight Draven in Emerald (Triple Kill)`. The solo-kill "why" variant is
+  the literal matchup query, `How to punish Jinx as Draven`, and `<champ> vs <victim>` is now a
+  search tag on every kill clip.
+- Descriptions open with one searchable sentence, then a single `Subscribe for more <champ>.`
+  line instead of the `👉 SUBSCRIBE for daily … — new clips every day!` banner. Facebook keeps
+  swapping it for "Follow" whatever the casing.
+- Hashtags are four or five, ordered for the three YouTube shows above the title (champion,
+  `#LeagueOfLegends`, streak, `#LoLClips`, then `#Shorts` last); `#Gaming` is gone.
+- Full-game titles use `|` instead of an em dash; the loss thumbnail no longer wears a `LOSS`
+  badge or the losing KDA (it leads with the `vs <opponent>` matchup, like the title does), and
+  the accent border is half as thick.
+- The auto-comment pool reads like a creator's comments (lowercase, a real question, no "new
+  clips every day!!").
+- **To roll these onto queued clips:** `python -m clipfarm.cli refresh-drafts` (published
+  items are untouched).
+
+### Changed — clip overlays restyled so edits don't look machine-made
+- Every timed text overlay (hook caption, subscribe ask, like ask) now **fades in and out**
+  over ~0.25s instead of popping on and off.
+- The hook caption is slightly smaller with a soft drop shadow instead of a fat black outline,
+  and loses its exclamation mark (`PENTAKILL`, `TRIPLE KILL`).
+- The subscribe and like asks are now **lower-third pills** (translucent rounded box, mixed case
+  as typed in config) sitting just under the gameplay frame, instead of giant caps in the
+  upper third. Default text is `Subscribe for more`. The mid-clip like ask defaults to **off**
+  (`like_cta_text: ""`); set it to turn it back on.
+- A clip with no kill and no champion gets **no caption** (the `WATCH THIS` fallback is gone).
+- The watermark moved slightly lower (`y=77%`) so it never collides with the pills.
+- **To re-render queued clips with the new look**, delete `data/converted/` (it is a cache;
+  clips re-render on their next publish).
+
+### Fixed — the test suite runs on a fresh clone
+- `pytest` needed a filled-in `.env` (two modules loaded settings at import). An autouse fixture
+  now supplies dummy secrets, ignores the real `.env`, and sandboxes `PROJECT_ROOT`, so tests
+  never touch real credentials or write into `data/`.
+
 ## 2026-07-18
 
 ### Fixed — the posting-time experiment was learning from poisoned data

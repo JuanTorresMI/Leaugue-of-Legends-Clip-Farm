@@ -148,24 +148,31 @@ window, so a blip doesn't silently drop an upload.
 ## Clip editing & background music
 
 Before upload, clips get a single-pass edit for watchability: **9:16 vertical**, a **burned-in
-hook caption** over the first seconds (`PENTAKILL!`, champion name, …) — the biggest retention
-lever on the Shorts feed — a small translucent **channel-handle watermark** for the whole clip
-(brand recall for viewers who never open the description), a random **royalty-free music track
-mixed quietly under the game audio**, and **loudness normalization**. Full games upload as-is.
-Fades are **off by default on purpose**: the channel's best-retention Shorts loop seamlessly
-(retention leaders sit at 110–144% — viewers rewatching), and a fade telegraphs the loop point.
-Controlled by the `editing:` block in `config.yaml` (`hook_caption`, `hook_seconds`,
-`watermark_text`, music volume, fade lengths, or `enabled: false` to upload clips raw). If any
-edit step fails, the clip falls back to a plain vertical conversion so an upload is never fully
-blocked.
+hook caption** over the first seconds (`PENTAKILL`, `TRIPLE KILL`, or the champion name) in the
+top bar with a soft shadow, a small **"Subscribe for more" pill** under the gameplay frame over
+the final seconds, an optional small translucent **channel-handle watermark** for the whole clip,
+a random **royalty-free music track mixed quietly under the game audio**, and **loudness
+normalization**. Full games upload as-is.
+
+The edit is tuned to *not* look auto-generated: every text overlay fades in and out instead of
+popping, the hook is the only big element and it sits on the blur bar rather than over the play,
+the asks are lower-third pills in mixed case rather than shouting caps mid-action, a clip with no
+kill and no champion gets no caption at all (no generic "WATCH THIS"), and the mid-clip like ask
+is off unless you set `like_cta_text`. Fades are **off by default on purpose**: the channel's
+best-retention Shorts loop seamlessly (retention leaders sit at 110–144% — viewers rewatching),
+and a fade telegraphs the loop point. Controlled by the `editing:` block in `config.yaml`
+(`hook_caption`, `hook_seconds`, `subscribe_cta_text`, `like_cta_text`, `watermark_text`, music
+volume, fade lengths, or `enabled: false` to upload clips raw). If any edit step fails, the clip
+falls back to a plain vertical conversion so an upload is never fully blocked.
 
 ## Title A/B testing
 
 Every kill clip is posted with one of three title hook styles, chosen deterministically per clip
 and **recorded on the row** so the dashboard can score them against each other:
-- **hype** — direct hype statement: `Draven INSANE TRIPLE KILL vs X 🔥`
-- **wait** — curiosity gap: `Wait for the TRIPLE KILL 🔥 Draven vs X`
-- **why** — lesson framing: `This is why you don't fight Draven 🔥`
+- **hype** — direct statement: `Draven Triple Kill vs Jinx & Lulu 🔥 | Emerald ADC`
+- **wait** — curiosity gap: `Wait for the triple kill… Draven vs Jinx & Lulu | Emerald ADC`
+- **why** — lesson / matchup framing: `This is why you don't fight Draven in Emerald (Triple Kill)`,
+  or for a solo kill the literal search query, `How to punish Jinx as Draven | Emerald ADC`
 
 The **🧪 Title styles** panel on the metrics Overview compares average views and retention per
 style as data accumulates. Run `refresh-drafts` to re-roll queued (unpublished) titles into the
@@ -173,15 +180,22 @@ experiment; already-published titles are never touched.
 
 ## Optimized for reach & monetization
 
-Titles, descriptions, hashtags, and thumbnails are generated for click-through:
-- **Titles** lead with the champion + what happened, add scroll-stopping emoji/hype words
-  (`Jarvan IV 1v5 PENTAKILL 😱 | Emerald Jungle #shorts`), and stay under YouTube's 100-char cap.
-- **Descriptions** front-load searchable phrasing, then a fixed **SUBSCRIBE call-to-action**
-  (subscribers → watch-time → the Partner-Program monetization thresholds).
-- **Hashtags** are a tight, high-signal set (`#Shorts` first, champion, streak, then broad reach).
-- **Tags** carry long-tail SEO phrases (`<champ> montage`, `league of legends best plays`, …).
-- **Composite thumbnails** (full games) get boosted saturation/contrast and a bright accent
-  border to pop on the browse shelf.
+Titles, descriptions, hashtags, and thumbnails are generated for click-through, and written to
+read like a person typed them rather than a template:
+- **Titles** lead with the champion and the matchup (what people actually search), add the
+  `| Emerald Jungle` rank/role phrase when it fits in the Shorts feed's two lines, use at most one
+  emoji, never shout hype adjectives, and never carry a `#shorts` suffix (YouTube detects the
+  format from the video; the tag just reads as spam). Full games: `11/3/4 Draven vs Jinx ADC |
+  Emerald Full Gameplay (Patch 26.19)`, with the score shown only on a win.
+- **Descriptions** open with one searchable sentence (`Draven double kill on Jinx & Lulu in Ranked
+  Solo/Duo (Emerald II, patch 26.19).`), then one plain `Subscribe for more Draven.` line
+  (subscribers → watch-time → the Partner-Program monetization thresholds), then the hashtags.
+- **Hashtags** are a tight set of four or five, ordered for the three YouTube shows above the
+  title: champion, `#LeagueOfLegends`, streak, `#LoLClips`, then `#Shorts` last.
+- **Tags** carry long-tail SEO phrases and the matchup (`draven vs jinx`, `draven montage`, …).
+- **Composite thumbnails** (full games) get boosted saturation/contrast and a slim accent border.
+  A win gets a `WIN` badge; a loss leads with the matchup badge (`vs Jinx`) and never shows the
+  losing score, for the same reason titles don't.
 
 All of it is still a *draft* — edit anything in the dashboard before you Approve.
 

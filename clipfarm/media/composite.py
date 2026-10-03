@@ -18,13 +18,13 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-from clipfarm.config import get_settings
+from clipfarm.config import PROJECT_ROOT
 from clipfarm.media import ddragon
 
 logger = logging.getLogger(__name__)
 
 W, H = 1280, 720
-_FONT_PATH = get_settings().project_root / "assets" / "fonts" / "Anton-Regular.ttf"
+_FONT_PATH = PROJECT_ROOT / "assets" / "fonts" / "Anton-Regular.ttf"
 
 # Accent colors (RGB) keyed by "mood".
 GOLD = (240, 190, 70)
@@ -193,26 +193,47 @@ def _draw_text_stack(canvas: Image.Image, spec: ThumbnailSpec) -> None:
     )
 
 
+def _full_game_hook(won: bool, opponent_champion: str | None) -> tuple[str, tuple[int, int, int]]:
+    """The badge for a full-game thumbnail. A win is a brag worth the badge; a loss is not --
+    "LOSS" on a thumbnail repels the click the same way "LOSS 4/8/12" did in titles. A lost game
+    leads with the matchup instead (the thing a searcher is actually looking for)."""
+    from clipfarm.riot.champion_names import display_name
+
+    if won:
+        return "WIN", GREEN
+    if opponent_champion:
+        return f"vs {display_name(opponent_champion)}", BLUE
+    return "FULL GAME", BLUE
+
+
 def spec_for_full_game(match, rank: str | None) -> ThumbnailSpec:
     """Build a thumbnail spec from a matched full game. `match` is a jobs.models.MatchContext."""
     from clipfarm.riot.champion_names import display_name
 
-    won = match.win
-    hook = "WIN" if won else "LOSS"
-    accent = GREEN if won else RED
+    hook, accent = _full_game_hook(match.win, match.opponent_champion)
     context = " ".join(bit for bit in [rank, match.role] if bit)  # "Emerald Jungle"
-    subtitle_bits = [match.kda]
-    if match.opponent_champion:
-        subtitle_bits.append(f"vs {display_name(match.opponent_champion)}")
-    if context:
-        subtitle_bits.append(context)
     return ThumbnailSpec(
         champion=match.champion,
         hook=hook,
-        subtitle="   ".join(subtitle_bits),
+        subtitle=_full_game_subtitle(match.win, match.kda, match.opponent_champion, context, hook),
         accent=accent,
         champion_display=display_name(match.champion),
     )
+
+
+def _full_game_subtitle(won: bool, kda: str | None, opponent_champion: str | None, context: str, hook: str) -> str:
+    """KDA only when it's a brag (a win), the matchup unless the badge already says it, then
+    the rank/role phrase. Mirrors the title rule: never put a losing score on the artwork."""
+    from clipfarm.riot.champion_names import display_name
+
+    bits = []
+    if won and kda:
+        bits.append(kda)
+    if opponent_champion and not hook.startswith("vs "):
+        bits.append(f"vs {display_name(opponent_champion)}")
+    if context:
+        bits.append(context)
+    return "   ".join(bits)
 
 
 def spec_for_clip(match, highlight, rank: str | None) -> ThumbnailSpec:
@@ -262,14 +283,8 @@ def spec_from_row(row) -> ThumbnailSpec | None:
             hook, accent = "HIGHLIGHT", BLUE
         subtitle = context or (row["queue_type"] or "League of Legends")
     else:
-        won = bool(row["win"])
-        hook, accent = ("WIN", GREEN) if won else ("LOSS", RED)
-        bits = [row["kda"]]
-        if row["opponent_champion"]:
-            bits.append(f"vs {display_name(row['opponent_champion'])}")
-        if context:
-            bits.append(context)
-        subtitle = "   ".join(bit for bit in bits if bit)
+        hook, accent = _full_game_hook(bool(row["win"]), row["opponent_champion"])
+        subtitle = _full_game_subtitle(bool(row["win"]), row["kda"], row["opponent_champion"], context, hook)
 
     return ThumbnailSpec(
         champion=champion,
@@ -280,8 +295,9 @@ def spec_from_row(row) -> ThumbnailSpec | None:
     )
 
 
-def _accent_border(canvas: Image.Image, color: tuple[int, int, int], width: int = 12) -> None:
-    """A bright accent frame that makes the thumbnail pop against YouTube's grid."""
+def _accent_border(canvas: Image.Image, color: tuple[int, int, int], width: int = 6) -> None:
+    """A thin accent frame that separates the thumbnail from YouTube's grid. Kept slim on
+    purpose: a fat coloured border is the signature of auto-generated thumbnails."""
     draw = ImageDraw.Draw(canvas)
     draw.rectangle([0, 0, W - 1, H - 1], outline=color, width=width)
 
