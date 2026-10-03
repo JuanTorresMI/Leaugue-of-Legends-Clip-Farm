@@ -165,18 +165,36 @@ and a fade telegraphs the loop point. Controlled by the `editing:` block in `con
 volume, fade lengths, or `enabled: false` to upload clips raw). If any edit step fails, the clip
 falls back to a plain vertical conversion so an upload is never fully blocked.
 
-## Title A/B testing
+## Titles that don't repeat (and the A/B families)
 
-Every kill clip is posted with one of three title hook styles, chosen deterministically per clip
-and **recorded on the row** so the dashboard can score them against each other:
-- **hype** — direct statement: `Draven Triple Kill vs Jinx & Lulu 🔥 | Emerald ADC`
-- **wait** — curiosity gap: `Wait for the triple kill… Draven vs Jinx & Lulu | Emerald ADC`
-- **why** — lesson / matchup framing: `This is why you don't fight Draven in Emerald (Triple Kill)`,
-  or for a solo kill the literal search query, `How to punish Jinx as Draven | Emerald ADC`
+Every kill clip draws its title from a pool of **dozens of sentence shapes**, not a template:
+the shape, the rank/role suffix style (`| Emerald ADC`, `(Emerald ADC)`, inline, or none), the
+verb, the adjective, and whether the single emoji appears are all rolled separately and seeded
+by the clip's match id + kill timestamp (so regenerating gives the same title). Two Yunara clips
+in a row therefore read as two different posts, not one template with the victim swapped. The
+shapes are grouped into four hook **families**, recorded on the row so the dashboard can score
+them against each other:
+- **hype** — direct: `Draven Triple Kill vs Jinx, Lulu & Viego 🔥 | Emerald ADC`,
+  `Jinx did not see that Draven coming`, `3 kills in 6 seconds as Draven`
+- **wait** — curiosity gap: `Wait for the triple kill… Draven vs Jinx & Lulu`,
+  `They should have backed off from Draven`, `Jinx thought they were safe`
+- **why** — lesson / matchup: `How to punish Jinx as Draven | Emerald ADC`,
+  `This is why you don't fight Draven in Emerald (Triple Kill)`
+- **question** — invites a comment: `Was this Draven play clean or lucky?`,
+  `What should Jinx & Lulu have done vs Draven?`, `Rate this Draven PENTAKILL 1-10`
 
 The **🧪 Title styles** panel on the metrics Overview compares average views and retention per
-style as data accumulates. Run `refresh-drafts` to re-roll queued (unpublished) titles into the
-experiment; already-published titles are never touched.
+family as data accumulates. Run `refresh-drafts` to re-roll queued (unpublished) titles; already-
+published titles are never touched.
+
+**Back-to-back posts are varied on purpose.** YouTube (and viewers) read two near-identical
+`Yunara …` uploads in a row as a repost, and the second one's reach suffers. With **Vary
+consecutive posts** on (Auto-post panel, default on), the scheduler prefers a different champion
+than the last post or two (a same-champion clip is penalised, not banned: a pentakill of the same
+champion still beats a solo kill of another), and it never reuses the previous post's title
+shape. Each draft carries one pre-generated alternate title per family, so when the next clip
+would repeat the last post's family it switches to another shape at post time with no extra API
+call. A title you edited by hand is never swapped.
 
 ## Optimized for reach & monetization
 
@@ -193,9 +211,16 @@ read like a person typed them rather than a template:
 - **Hashtags** are a tight set of four or five, ordered for the three YouTube shows above the
   title: champion, `#LeagueOfLegends`, streak, `#LoLClips`, then `#Shorts` last.
 - **Tags** carry long-tail SEO phrases and the matchup (`draven vs jinx`, `draven montage`, …).
-- **Composite thumbnails** (full games) get boosted saturation/contrast and a slim accent border.
-  A win gets a `WIN` badge; a loss leads with the matchup badge (`vs Jinx`) and never shows the
-  losing score, for the same reason titles don't.
+- **Composite thumbnails.** Full games (16:9) get boosted saturation/contrast and a slim accent
+  border; a win gets a `WIN` badge, a loss leads with the matchup badge (`vs Jinx`) and never
+  shows the losing score, for the same reason titles don't. Clips get a **9:16 card built around
+  the clip's own frame**: a crisp band of the actual gameplay (grabbed from a seeded point
+  35–70% through the clip, so it's the action, not the same pre-fight second every time), the
+  champion's art on a seeded side with feathered edges, the streak or champion as the headline,
+  a `vs` row with the **victims' champion icons** underneath, and an accent colour that is
+  consistent per champion but different between champions. It is uploaded for Shorts too: the
+  feed shows the video, but search results, the channel's Shorts grid and subscription feeds show
+  this card.
 
 All of it is still a *draft* — edit anything in the dashboard before you Approve.
 

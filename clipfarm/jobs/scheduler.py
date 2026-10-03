@@ -84,15 +84,61 @@ def enabled_targets(kind: str) -> list[str]:
     return registry.enabled_platforms(kind)
 
 
+# How much a candidate's value drops for repeating the champion of the previous post / the one
+# before it. Sized so a pentakill (100) of the same champion still beats a solo kill (15) of a
+# different one, but a triple (60) of a different champion beats a same-champion penta.
+_SAME_CHAMP_PENALTY = (55, 25)
+
+
 def _pick_next(conn, settings: autopost.AutopostSettings, account_id: str, primary: str):
     """The single best eligible clip to post next, or None. Best = highest value, then freshest,
-    subject to the per-game cap."""
+    subject to the per-game cap. With vary_consecutive on, a clip of the champion posted last
+    (or the time before) is penalised so the feed alternates champions where it can -- the
+    same champion twice in a row with near-identical titles reads as a repost."""
     rows = conn.execute(_CANDIDATE_SQL, (account_id, settings.min_kill_streak, primary)).fetchall()
-    ranked = sorted(rows, key=lambda r: (clip_score(r), r["recorded_at"]), reverse=True)
+    recent_champs = [r["champion"] for r in db.recent_autoposts(conn, primary, "clip", limit=2)]
+
+    def value(row) -> int:
+        score = clip_score(row)
+        if settings.vary_consecutive:
+            for champ, penalty in zip(recent_champs, _SAME_CHAMP_PENALTY, strict=False):
+                if champ and row["champion"] == champ:
+                    score -= penalty
+        return score
+
+    ranked = sorted(rows, key=lambda r: (value(r), r["recorded_at"]), reverse=True)
     for row in ranked:
         if db.autopost_count_for_match(conn, primary, row["riot_match_id"]) < settings.per_game_cap:
             return row
     return None
+
+
+def _vary_title(conn, row, primary: str) -> tuple[str, str | None]:
+    """Make sure this post's title shape differs from the previous post's. Returns the
+    (title, family) to publish with and persists it if changed. Only touches a title that is
+    still the generated draft (a hand-edited title is left alone); the alternates were
+    generated at ingest, one per hook family, so this costs no API call."""
+    import json
+
+    title, family = row["draft_title"], row["title_variant"]
+    try:
+        alternates: dict[str, str] = json.loads(row["draft_title_alternates"] or "{}")
+    except (TypeError, ValueError):
+        alternates = {}
+    recent = db.recent_autoposts(conn, primary, "clip", limit=1)
+    last_family = recent[0]["title_variant"] if recent else None
+    if not family or family != last_family or title not in alternates.values():
+        return title, family
+    options = [(f, t) for f, t in alternates.items() if f != family and t != title]
+    if not options:
+        return title, family
+    # Deterministic: rotate families in a fixed order from the current one.
+    order = [f for f in ("hype", "wait", "why", "question") if f in dict(options)]
+    new_family = order[(order.index(family) + 1) % len(order)] if family in order else order[0]
+    new_title = dict(options)[new_family]
+    db.update_media_file(conn, row["id"], draft_title=new_title, title_variant=new_family)
+    logger.info("Auto-post: switched title shape %s -> %s to avoid a repeat: %s", family, new_family, new_title)
+    return new_title, new_family
 
 
 def _pick_next_full_game(conn, account_id: str, primary: str):
@@ -181,6 +227,8 @@ def run_once(now_local: datetime | None = None) -> int | None:
 
             media_file_id = pick["id"]
             title = pick["draft_title"]
+            if settings.vary_consecutive:
+                title, _ = _vary_title(conn, pick, primary)
             for platform in targets:
                 db.ensure_publish_target(conn, media_file_id, platform, selected=True)
             db.update_media_file(conn, media_file_id, status="approved")

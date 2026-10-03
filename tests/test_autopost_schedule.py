@@ -59,3 +59,10 @@ def test_more_slots_than_window_hours_is_clamped():
     hours = explore_hours_for(s, date(2026, 7, 13))
     assert len(hours) == 3  # can't schedule 5 posts inside a 3-hour window
     assert all(20 <= h <= 22 for h in hours)
+
+
+def test_vary_consecutive_defaults_on_and_round_trips():
+    from clipfarm.autopost import AutopostSettings
+
+    assert AutopostSettings().normalized().vary_consecutive is True
+    assert AutopostSettings(vary_consecutive=0).normalized().vary_consecutive is False

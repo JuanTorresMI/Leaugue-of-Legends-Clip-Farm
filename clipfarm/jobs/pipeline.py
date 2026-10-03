@@ -60,8 +60,26 @@ def _row_to_match_context(row: sqlite3.Row) -> MatchContext:
 _MATCH_FIELDS = (
     "riot_match_id", "participant_id", "champion", "kda", "win", "queue_type",
     "game_start_ms", "game_end_ms", "role", "patch", "opponent_champion", "kill_streak",
-    "highlight_ms", "title_variant", "error_message",
+    "highlight_ms", "title_variant", "error_message", "victim_champions", "draft_title_alternates",
 )
+
+
+def _clip_frame_offset(path: Path, fallback_seconds: float) -> float:
+    """Where to grab a clip's thumbnail frame. A fixed 1.5s gives every clip the same pre-fight
+    frame; instead pick a point 35-70% through the clip (seeded by filename, so regeneration is
+    stable), which lands in or near the action and makes each thumbnail its own moment."""
+    import zlib
+
+    from clipfarm.media.ffmpeg import FfmpegError, duration_seconds
+
+    try:
+        total = duration_seconds(path)
+    except FfmpegError:
+        return fallback_seconds
+    if total <= 3:
+        return min(fallback_seconds, max(total - 0.1, 0))
+    fraction = 0.35 + (zlib.crc32(path.stem.encode()) % 36) / 100  # 0.35 .. 0.70
+    return round(total * fraction, 2)
 
 
 def _derive_fields(path: Path, parsed, client) -> dict:
@@ -168,6 +186,7 @@ def _derive_fields(path: Path, parsed, client) -> dict:
                     champion=highlight.champion if highlight else matched_game.champion,
                     kill_streak=highlight.kill_streak if highlight else None,
                     highlight_ms=highlight.first_kill_ms if highlight else None,
+                    victim_champions=list(highlight.victim_champions) if highlight else None,
                     role=matched_game.role,
                     patch=matched_game.patch,
                 )
@@ -185,7 +204,7 @@ def _derive_fields(path: Path, parsed, client) -> dict:
             output_jpg = settings.project_root / "data" / "thumbnails" / f"{path.stem}_clip.jpg"
             if matched_game and settings.thumbnails.composite_enabled:
                 frame = settings.project_root / "data" / "thumbnails" / f"{path.stem}_frame.png"
-                grab_frame(path, frame, settings.thumbnails.clip_frame_offset_seconds)
+                grab_frame(path, frame, _clip_frame_offset(path, settings.thumbnails.clip_frame_offset_seconds))
                 generate_composite(spec_for_clip(matched_game, highlight, effective_rank), frame, output_jpg)
                 frame.unlink(missing_ok=True)
             elif parsed.thumbnail_path is not None:
@@ -201,6 +220,7 @@ def _derive_fields(path: Path, parsed, client) -> dict:
         fields["hashtags"] = metadata.hashtags
         fields["tags"] = metadata.tags
         fields["title_variant"] = metadata.title_variant
+        fields["title_alternates"] = metadata.title_alternates
 
         if fields.get("riot_match_id"):
             fields["status"] = "ready"

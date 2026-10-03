@@ -9,6 +9,30 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ## 2026-10-03
 
+### Added — a title pool instead of three templates, and no-repeat posting
+- Kill-clip titles now come from a pool of ~70 sentence shapes across four hook families
+  (`hype`, `wait`, `why`, and the new `question`), with the suffix style, verb, adjective and
+  emoji rolled independently, all seeded by match + kill timestamp. Same-champion clips no
+  longer read as one template with the victim swapped. Three-victim phrases now name all three.
+- Each draft stores one alternate title per family (`media_files.draft_title_alternates`) and
+  the clip's victims (`media_files.victim_champions`); both are idempotent column migrations.
+- **Auto-post → Vary consecutive posts** (new setting, default on): the scheduler penalises a
+  clip of the champion posted last (-55) or the time before (-25) so the feed alternates
+  champions where it can, and switches a clip's title to a different family when the previous
+  post used the same one (hand-edited titles are never touched). Two near-identical uploads in
+  a row were being read as reposts.
+- Description "about" and subscribe lines rotate through a few wordings.
+
+### Changed — clip thumbnails are 9:16 cards built around the clip's own frame
+- A crisp band of the actual gameplay (grabbed 35-70% through the clip, seeded by filename,
+  instead of a fixed 1.5s), champion art on a seeded side with feathered edges, streak or
+  champion as the headline, a `vs` row of the victims' Data Dragon icons, and a per-champion
+  accent colour. The composite is now also uploaded for Shorts (search / channel grid /
+  subscriptions show it; the feed itself still shows the video). The dashboard shows the
+  whole card (`object-fit: contain`).
+- Regenerate Thumbnail on an existing clip rebuilds it in the new layout; victims appear once
+  the row has been reprocessed (`refresh-drafts`) since older rows don't store them yet.
+
 ### Changed — titles, descriptions, and hashtags rewritten to read like a person (SEO pass)
 - Every title shape dropped the tells of a generated title: the `#shorts` suffix (YouTube
   detects the format from the video; the tag just looks spammy), em dashes, stacked emoji

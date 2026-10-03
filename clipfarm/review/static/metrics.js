@@ -12,7 +12,7 @@ const TIER_META = {
 };
 
 // A/B title hook styles (see metadata_builder._TITLE_VARIANTS on the backend).
-const VARIANT_LABELS = { hype: "Direct hype", wait: "“Wait for it…”", why: "“This is why…”" };
+const VARIANT_LABELS = { hype: "Direct", wait: "“Wait for it…”", why: "“This is why…”", question: "Question" };
 
 // Views gained in the last 24h, rendered as a green +delta so movement pops in the tables.
 const delta = (n) =>
