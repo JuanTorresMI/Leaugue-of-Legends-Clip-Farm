@@ -305,10 +305,17 @@ def retry_failed_publishes(older_than_min: int = 30, max_retries: int = 8, limit
 
 
 def tick(now_local: datetime | None = None) -> None:
-    """One full scheduler pass: backfill any missed uploads, then the clip and long-form tracks."""
+    """One full scheduler pass: backfill any missed uploads, then the clip and long-form tracks,
+    then custom thumbnails for uploads YouTube has finished processing."""
     retry_failed_publishes()
     run_once(now_local)
     run_full_game_once(now_local)
+    try:
+        from clipfarm.publishers import youtube
+
+        youtube.apply_pending_thumbnails()
+    except Exception:  # noqa: BLE001 -- cosmetic; must never stop posting
+        logger.warning("Deferred thumbnail pass failed; will retry next tick", exc_info=True)
 
 
 def start_autopost_scheduler(interval_seconds: int = 300) -> threading.Thread:

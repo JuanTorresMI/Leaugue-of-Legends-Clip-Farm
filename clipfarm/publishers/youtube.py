@@ -103,6 +103,64 @@ def _set_thumbnail(service, video_id: str, thumbnail_path: str, sleep=time.sleep
     return False
 
 
+# Deferred-thumbnail tuning: don't look at an upload younger than this (processing takes
+# minutes), and stop waiting on one that still isn't processed after this long.
+_THUMBNAIL_MIN_AGE_MIN = 3
+_THUMBNAIL_GIVE_UP_HOURS = 24
+
+
+def _processing_state(service, video_id: str) -> str:
+    """'done', 'processing', or 'failed' (rejected/failed/deleted) for one of our uploads."""
+    items = service.videos().list(part="status,processingDetails", id=video_id).execute().get("items", [])
+    if not items:
+        return "failed"  # deleted, or not visible to this channel
+    upload_status = items[0].get("status", {}).get("uploadStatus")
+    processing = items[0].get("processingDetails", {}).get("processingStatus")
+    if upload_status in ("failed", "rejected", "deleted") or processing in ("failed", "terminated"):
+        return "failed"
+    if upload_status == "processed" or processing == "succeeded":
+        return "done"
+    return "processing"
+
+
+def apply_pending_thumbnails(limit: int = 5, service=None) -> int:
+    """Set custom thumbnails on uploads YouTube has finished processing. Called from the
+    scheduler tick; cheap (one videos.list per pending video) and a no-op when nothing waits.
+    Returns how many thumbnails were set."""
+    from clipfarm import db
+
+    with db.get_conn() as conn:
+        pending = db.pending_thumbnails(conn, "youtube", _THUMBNAIL_MIN_AGE_MIN, limit)
+    if not pending:
+        return 0
+    service = service or _build_service()
+    applied = 0
+    for row in pending:
+        video_id, media_file_id = row["platform_video_id"], row["media_file_id"]
+        thumb = row["thumbnail_path"]
+        if not thumb or not Path(thumb).exists():
+            outcome = "failed"
+            logger.warning("Thumbnail for %s skipped: file %s no longer exists", video_id, thumb)
+        else:
+            state = _processing_state(service, video_id)
+            if state == "processing":
+                if row["age_hours"] < _THUMBNAIL_GIVE_UP_HOURS:
+                    continue  # check again next tick
+                logger.warning("Thumbnail for %s skipped: still processing after %dh", video_id, row["age_hours"])
+                outcome = "failed"
+            elif state == "failed":
+                logger.warning("Thumbnail for %s skipped: YouTube failed/rejected the video", video_id)
+                outcome = "failed"
+            else:
+                outcome = "set" if _set_thumbnail(service, video_id, thumb) else "failed"
+        if outcome == "set":
+            applied += 1
+            logger.info("Custom thumbnail set for %s (media_file %s) after processing", video_id, media_file_id)
+        with db.get_conn() as conn:
+            db.set_thumbnail_status(conn, media_file_id, "youtube", outcome)
+    return applied
+
+
 def _sanitize(text: str) -> str:
     """YouTube rejects angle brackets in titles/descriptions."""
     return text.replace("<", "(").replace(">", ")")
@@ -292,12 +350,15 @@ def publish(media_file: sqlite3.Row) -> str:
     video_id = response["id"]
     quota.record_success("youtube")
 
-    # Cosmetic, never fatal. For Shorts, YouTube only *displays* a custom thumbnail on Partner
-    # Program channels (rolled out July 2026), and even then only on search / channel grid /
-    # subscriptions -- never the swipe feed. Other channels get the upload accepted but a video
-    # frame shown. Still worth sending: it starts working the day the channel joins YPP.
+    # The custom thumbnail is NOT set here. Set on a still-processing video, YouTube accepts it
+    # but then regenerates the Shorts (9:16) thumbnail from the video once processing ends, so
+    # ours never shows. Mark it pending; apply_pending_thumbnails() (scheduler tick) sets it
+    # after processing finishes. Persisted, so a restart mid-processing doesn't lose it.
     if media_file["thumbnail_path"] and Path(media_file["thumbnail_path"]).exists():
-        _set_thumbnail(service, video_id, media_file["thumbnail_path"])
+        from clipfarm import db
+
+        with db.get_conn() as conn:
+            db.set_thumbnail_status(conn, media_file["id"], "youtube", "pending")
 
     # File full games into their champion's playlist (session-building; see the helper).
     # Cosmetic like the thumbnail: a playlist hiccup must never fail a finished upload.

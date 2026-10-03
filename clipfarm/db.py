@@ -138,6 +138,9 @@ _MIGRATION_COLUMNS = [
     ("media_files", "draft_title_alternates", "TEXT"),  # JSON {family: title}: other title shapes for this clip
     ("autopost_log", "kind", "TEXT DEFAULT 'clip'"),  # separate clip vs full-game cadence tracks
     ("publish_targets", "retry_count", "INTEGER DEFAULT 0"),  # failed attempts so far (caps auto-retries)
+    # Deferred custom thumbnail: 'pending' until the platform finishes processing the video,
+    # then 'set' or 'failed'. NULL = nothing to do (no thumbnail, or published before this existed).
+    ("publish_targets", "thumbnail_status", "TEXT"),
 ]
 
 
@@ -490,6 +493,33 @@ def autopost_last_fired(conn: sqlite3.Connection, platform: str, kind: str = "cl
         (platform, kind),
     ).fetchone()
     return row["t"] if row and row["t"] else None
+
+
+def set_thumbnail_status(conn: sqlite3.Connection, media_file_id: int, platform: str, status: str) -> None:
+    conn.execute(
+        "UPDATE publish_targets SET thumbnail_status = ? WHERE media_file_id = ? AND platform = ?",
+        (status, media_file_id, platform),
+    )
+
+
+def pending_thumbnails(conn: sqlite3.Connection, platform: str, min_age_min: int, limit: int) -> list[sqlite3.Row]:
+    """Published videos whose custom thumbnail is still waiting for the platform to finish
+    processing. `min_age_min` skips just-finished uploads (processing takes minutes anyway);
+    `age_hours` lets the caller give up on a video that never finishes processing."""
+    return conn.execute(
+        """
+        SELECT pt.media_file_id, pt.platform_video_id, m.thumbnail_path,
+               (julianday('now') - julianday(pt.updated_at)) * 24 AS age_hours
+        FROM publish_targets pt
+        JOIN media_files m ON m.id = pt.media_file_id
+        WHERE pt.platform = ? AND pt.status = 'published' AND pt.thumbnail_status = 'pending'
+          AND pt.platform_video_id IS NOT NULL
+          AND pt.updated_at <= datetime('now', ?)
+        ORDER BY pt.updated_at
+        LIMIT ?
+        """,
+        (platform, f"-{min_age_min} minutes", limit),
+    ).fetchall()
 
 
 def retryable_failed_targets(
