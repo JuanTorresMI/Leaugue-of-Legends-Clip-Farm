@@ -87,3 +87,45 @@ def test_comments_scope_is_requested_on_reauth():
     # The next `reauth-youtube` must ask for the comments permission, or auto-comment can
     # never activate.
     assert youtube._COMMENTS_SCOPE in youtube.SCOPES
+
+
+class _FakeThumbnails:
+    """thumbnails().set(...).execute() that raises the queued errors, then succeeds."""
+
+    def __init__(self, errors):
+        self.errors = list(errors)
+        self.calls = 0
+
+    def thumbnails(self):
+        return self
+
+    def set(self, **kwargs):
+        return self
+
+    def execute(self):
+        self.calls += 1
+        if self.errors:
+            raise self.errors.pop(0)
+        return {}
+
+
+def test_thumbnail_retries_until_new_video_is_registered(tmp_path, monkeypatch):
+    monkeypatch.setattr(youtube, "MediaFileUpload", lambda path: path)
+    svc = _FakeThumbnails([_http_error("videoNotFound", "not found"), _http_error("videoNotFound", "not found")])
+    waits = []
+    assert youtube._set_thumbnail(svc, "VID", "thumb.jpg", sleep=waits.append) is True
+    assert svc.calls == 3 and waits == [5, 15]
+
+
+def test_thumbnail_gives_up_without_raising(monkeypatch):
+    monkeypatch.setattr(youtube, "MediaFileUpload", lambda path: path)
+    svc = _FakeThumbnails([_http_error("videoNotFound", "x")] * 10)
+    assert youtube._set_thumbnail(svc, "VID", "thumb.jpg", sleep=lambda s: None) is False
+    assert svc.calls == len(youtube._THUMBNAIL_RETRY_DELAYS) + 1
+
+
+def test_thumbnail_does_not_retry_other_errors(monkeypatch):
+    monkeypatch.setattr(youtube, "MediaFileUpload", lambda path: path)
+    svc = _FakeThumbnails([_http_error("forbidden", "verify your account")])
+    assert youtube._set_thumbnail(svc, "VID", "thumb.jpg", sleep=lambda s: None) is False
+    assert svc.calls == 1

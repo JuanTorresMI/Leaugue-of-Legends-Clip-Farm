@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 
 from google.auth.exceptions import RefreshError
@@ -65,6 +66,41 @@ def _friendly_upload_error(exc: HttpError) -> YouTubeUploadError:
     except Exception:  # noqa: BLE001 -- fall back to the raw error text
         message = str(exc)
     return YouTubeUploadError(_REASON_MESSAGES.get(reason, f"YouTube upload failed: {message}"))
+
+
+# A freshly inserted video can briefly 404 on thumbnails.set until YouTube registers it.
+_THUMBNAIL_RETRY_DELAYS = (5, 15, 30)
+
+
+def _error_reason(exc: HttpError) -> str | None:
+    try:
+        return json.loads(exc.content.decode())["error"]["errors"][0].get("reason")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _set_thumbnail(service, video_id: str, thumbnail_path: str, sleep=time.sleep) -> bool:
+    """Upload a custom thumbnail, retrying while YouTube hasn't registered the new video yet.
+    Never raises: returns True on success, logs the real reason and returns False otherwise."""
+    for attempt in range(len(_THUMBNAIL_RETRY_DELAYS) + 1):
+        try:
+            service.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(thumbnail_path)).execute()
+            return True
+        except HttpError as exc:
+            reason = _error_reason(exc)
+            if reason == "videoNotFound" and attempt < len(_THUMBNAIL_RETRY_DELAYS):
+                sleep(_THUMBNAIL_RETRY_DELAYS[attempt])
+                continue
+            hint = {
+                "videoNotFound": "YouTube still hadn't registered the video after retrying",
+                "forbidden": "the channel may need phone verification at youtube.com/verify",
+            }.get(reason, f"YouTube said: {reason or exc}")
+            logger.warning("Custom thumbnail not set for %s (%s) -- video itself published fine.", video_id, hint)
+            return False
+        except Exception:  # noqa: BLE001
+            logger.warning("Custom thumbnail not set for %s -- video itself published fine.", video_id, exc_info=True)
+            return False
+    return False
 
 
 def _sanitize(text: str) -> str:
@@ -256,22 +292,12 @@ def publish(media_file: sqlite3.Row) -> str:
     video_id = response["id"]
     quota.record_success("youtube")
 
-    # Custom thumbnails need the channel's one-time phone verification -- treat failure as
-    # cosmetic, never fatal. For Shorts the feed itself shows a frame of the video, but the
-    # custom (9:16) composite is what search results, the channel's Shorts grid, and
-    # subscription feeds use, so it is worth setting for clips as well.
+    # Cosmetic, never fatal. For Shorts, YouTube only *displays* a custom thumbnail on Partner
+    # Program channels (rolled out July 2026), and even then only on search / channel grid /
+    # subscriptions -- never the swipe feed. Other channels get the upload accepted but a video
+    # frame shown. Still worth sending: it starts working the day the channel joins YPP.
     if media_file["thumbnail_path"] and Path(media_file["thumbnail_path"]).exists():
-        try:
-            service.thumbnails().set(
-                videoId=video_id, media_body=MediaFileUpload(media_file["thumbnail_path"])
-            ).execute()
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "Custom thumbnail upload failed for %s (channel may need phone verification "
-                "at youtube.com/verify) -- video itself published fine.",
-                video_id,
-                exc_info=True,
-            )
+        _set_thumbnail(service, video_id, media_file["thumbnail_path"])
 
     # File full games into their champion's playlist (session-building; see the helper).
     # Cosmetic like the thumbnail: a playlist hiccup must never fail a finished upload.
