@@ -31,6 +31,7 @@ class ClipHighlight:
     champion: str
     victim_champions: list[str] = field(default_factory=list)
     first_kill_ms: int | None = None  # game-relative ts of the streak's first kill (dedup signature)
+    last_kill_ms: int | None = None  # game-relative ts of the streak's last kill ("3 kills in 6 seconds")
 
 
 @dataclass
@@ -42,3 +43,6 @@ class DraftMetadata:
     # Which A/B title style produced `title` (see metadata_builder._TITLE_VARIANTS). Stored per
     # video so the metrics dashboard can measure which hook style actually earns views.
     title_variant: str | None = None
+    # One alternate title per hook family (family -> title), including the chosen one, so the
+    # scheduler can switch to a different shape at post time without re-deriving anything.
+    title_alternates: dict[str, str] = field(default_factory=dict)

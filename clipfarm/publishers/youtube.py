@@ -256,9 +256,11 @@ def publish(media_file: sqlite3.Row) -> str:
     video_id = response["id"]
     quota.record_success("youtube")
 
-    # Custom thumbnails only apply to regular videos (Shorts ignore them) and require the
-    # channel's one-time phone verification -- treat failure as cosmetic, never fatal.
-    if not is_clip and media_file["thumbnail_path"] and Path(media_file["thumbnail_path"]).exists():
+    # Custom thumbnails need the channel's one-time phone verification -- treat failure as
+    # cosmetic, never fatal. For Shorts the feed itself shows a frame of the video, but the
+    # custom (9:16) composite is what search results, the channel's Shorts grid, and
+    # subscription feeds use, so it is worth setting for clips as well.
+    if media_file["thumbnail_path"] and Path(media_file["thumbnail_path"]).exists():
         try:
             service.thumbnails().set(
                 videoId=video_id, media_body=MediaFileUpload(media_file["thumbnail_path"])

@@ -148,3 +148,10 @@ def test_publish_reel_sends_deduped_description(tmp_path, monkeypatch):
     }
     facebook.publish(row)
     assert sent["desc"].split().count("#Yunara") == 1
+
+
+def test_facebook_description_swaps_subscribe_for_follow_in_any_casing():
+    out = facebook.facebook_description("Clean play.\nSubscribe for more Zeri.\nsubscribers welcome", [])
+    assert "Follow for more Zeri." in out
+    assert "subscribers welcome" in out  # only the whole word is swapped
+    assert "ubscribe for" not in out

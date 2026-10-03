@@ -40,6 +40,10 @@ class AutopostSettings:
     min_gap_minutes: int = 90
     # Platforms clip auto-post publishes to.
     platforms: list[str] = field(default_factory=lambda: ["youtube"])
+    # Vary consecutive posts: prefer a different champion than the last post(s) and never reuse
+    # the previous post's title shape. Two near-identical "Yunara ..." titles in a row read as a
+    # repost to YouTube and viewers alike, which measurably hurts reach on the second one.
+    vary_consecutive: bool = True
 
     # --- long-form (full game) track, separate schedule ---
     # Long-form and Shorts peak at different times; full games go out mid-afternoon so they're
@@ -65,6 +69,7 @@ class AutopostSettings:
             per_game_cap=max(1, int(self.per_game_cap)),
             min_gap_minutes=max(0, int(self.min_gap_minutes)),
             platforms=[p for p in self.platforms if p] or ["youtube"],
+            vary_consecutive=bool(self.vary_consecutive),
             full_game_enabled=bool(self.full_game_enabled),
             full_game_hours=_hours(self.full_game_hours, [15]),
             full_game_platforms=[p for p in self.full_game_platforms if p] or ["youtube"],

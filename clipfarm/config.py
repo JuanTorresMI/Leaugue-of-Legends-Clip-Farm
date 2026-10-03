@@ -64,14 +64,16 @@ class EditingConfig(BaseModel):
     # muted, auto-scrolling viewer what they're about to see before they flick away.
     hook_caption: bool = True
     hook_seconds: float = 2.5
-    # Flash a subscribe ask over the LAST seconds of each clip. Shorts viewers almost never
-    # visit the channel page -- the ask has to happen inside the video, right after the payoff,
-    # while the finger is hovering. Empty string disables it.
+    # Subscribe ask over the LAST seconds of each clip, as a small lower-third pill in the
+    # casing given here (mixed case reads like a creator, ALL CAPS like a banner). Shorts
+    # viewers almost never visit the channel page -- the ask has to happen inside the video,
+    # right after the payoff, while the finger is hovering. Empty string disables it.
     subscribe_cta_text: str = ""
     subscribe_cta_seconds: float = 2.5
-    # Flash a brief like ask mid-clip (near the action's peak). A like is the one ranking
-    # signal a viewer can give without leaving the video; nobody taps unless asked. Empty
-    # string disables it. NOTE: the burned font has no emoji glyphs -- use words, not 👍.
+    # Optional brief like ask mid-clip (near the action's peak), rendered as a small
+    # lower-third pill like the subscribe ask. Off unless set: a second text flash in the
+    # middle of the play is the fastest way to make a clip look auto-generated. Words only
+    # (the burned font has no emoji glyphs).
     like_cta_text: str = ""
     like_cta_seconds: float = 2.0
 

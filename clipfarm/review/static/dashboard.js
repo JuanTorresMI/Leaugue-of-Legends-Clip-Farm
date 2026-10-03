@@ -318,6 +318,7 @@ async function loadAutopost() {
       document.getElementById("autopost-window").value = (data.explore_window || [11, 23]).join("-");
       document.getElementById("autopost-min-streak").value = data.min_kill_streak;
       document.getElementById("autopost-cap").value = data.per_game_cap;
+      document.getElementById("autopost-vary").checked = data.vary_consecutive !== false;
       document.getElementById("autopost-fg-enabled").checked = data.full_game_enabled;
       document.getElementById("autopost-fg-hours").value = (data.full_game_hours || []).join(", ");
       syncAutopostModeUI();
@@ -360,6 +361,7 @@ document.getElementById("autopost-save").addEventListener("click", async () => {
     explore_window: windowParts.length === 2 ? windowParts : [11, 23],
     min_kill_streak: parseInt(document.getElementById("autopost-min-streak").value, 10) || 1,
     per_game_cap: parseInt(document.getElementById("autopost-cap").value, 10) || 3,
+    vary_consecutive: document.getElementById("autopost-vary").checked,
     full_game_enabled: document.getElementById("autopost-fg-enabled").checked,
     full_game_hours: fgHours,
   };

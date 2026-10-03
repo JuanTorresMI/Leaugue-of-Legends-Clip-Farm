@@ -65,4 +65,5 @@ def analyze_clip_kills(
         champion=match.champion,
         victim_champions=victim_champions,
         first_kill_ms=best_cluster[0]["timestamp"],
+        last_kill_ms=best_cluster[-1]["timestamp"],
     )

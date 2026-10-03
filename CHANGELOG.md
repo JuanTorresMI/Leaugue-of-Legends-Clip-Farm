@@ -7,6 +7,76 @@ one-time repairs applied to the live database so they aren't a mystery later.
 
 ---
 
+## 2026-10-03
+
+### Added — a title pool instead of three templates, and no-repeat posting
+- Kill-clip titles now come from a pool of ~70 sentence shapes across four hook families
+  (`hype`, `wait`, `why`, and the new `question`), with the suffix style, verb, adjective and
+  emoji rolled independently, all seeded by match + kill timestamp. Same-champion clips no
+  longer read as one template with the victim swapped. Three-victim phrases now name all three.
+- Each draft stores one alternate title per family (`media_files.draft_title_alternates`) and
+  the clip's victims (`media_files.victim_champions`); both are idempotent column migrations.
+- **Auto-post → Vary consecutive posts** (new setting, default on): the scheduler penalises a
+  clip of the champion posted last (-55) or the time before (-25) so the feed alternates
+  champions where it can, and switches a clip's title to a different family when the previous
+  post used the same one (hand-edited titles are never touched). Two near-identical uploads in
+  a row were being read as reposts.
+- Description "about" and subscribe lines rotate through a few wordings.
+
+### Changed — clip thumbnails are 9:16 cards built around the clip's own frame
+- A crisp band of the actual gameplay (grabbed 35-70% through the clip, seeded by filename,
+  instead of a fixed 1.5s), champion art on a seeded side with feathered edges, streak or
+  champion as the headline, a `vs` row of the victims' Data Dragon icons, and a per-champion
+  accent colour. The composite is now also uploaded for Shorts (search / channel grid /
+  subscriptions show it; the feed itself still shows the video). The dashboard shows the
+  whole card (`object-fit: contain`).
+- Regenerate Thumbnail on an existing clip rebuilds it in the new layout; victims appear once
+  the row has been reprocessed (`refresh-drafts`) since older rows don't store them yet.
+
+### Changed — titles, descriptions, and hashtags rewritten to read like a person (SEO pass)
+- Every title shape dropped the tells of a generated title: the `#shorts` suffix (YouTube
+  detects the format from the video; the tag just looks spammy), em dashes, stacked emoji
+  (now at most one, only on the direct-hype variant), and SHOUTED hype adjectives (`INSANE`,
+  `DISGUSTING`, …). The rank/role phrase (`| Emerald ADC`) is kept for search but dropped
+  before the hook would be truncated in the Shorts feed's two lines.
+- The three A/B hook styles now differ in sentence *shape*, not just word choice:
+  `Draven Triple Kill vs Jinx & Lulu 🔥 | Emerald ADC` /
+  `Wait for the triple kill… Draven vs Jinx & Lulu | Emerald ADC` /
+  `This is why you don't fight Draven in Emerald (Triple Kill)`. The solo-kill "why" variant is
+  the literal matchup query, `How to punish Jinx as Draven`, and `<champ> vs <victim>` is now a
+  search tag on every kill clip.
+- Descriptions open with one searchable sentence, then a single `Subscribe for more <champ>.`
+  line instead of the `👉 SUBSCRIBE for daily … — new clips every day!` banner. Facebook keeps
+  swapping it for "Follow" whatever the casing.
+- Hashtags are four or five, ordered for the three YouTube shows above the title (champion,
+  `#LeagueOfLegends`, streak, `#LoLClips`, then `#Shorts` last); `#Gaming` is gone.
+- Full-game titles use `|` instead of an em dash; the loss thumbnail no longer wears a `LOSS`
+  badge or the losing KDA (it leads with the `vs <opponent>` matchup, like the title does), and
+  the accent border is half as thick.
+- The auto-comment pool reads like a creator's comments (lowercase, a real question, no "new
+  clips every day!!").
+- **To roll these onto queued clips:** `python -m clipfarm.cli refresh-drafts` (published
+  items are untouched).
+
+### Changed — clip overlays restyled so edits don't look machine-made
+- Every timed text overlay (hook caption, subscribe ask, like ask) now **fades in and out**
+  over ~0.25s instead of popping on and off.
+- The hook caption is slightly smaller with a soft drop shadow instead of a fat black outline,
+  and loses its exclamation mark (`PENTAKILL`, `TRIPLE KILL`).
+- The subscribe and like asks are now **lower-third pills** (translucent rounded box, mixed case
+  as typed in config) sitting just under the gameplay frame, instead of giant caps in the
+  upper third. Default text is `Subscribe for more`. The mid-clip like ask defaults to **off**
+  (`like_cta_text: ""`); set it to turn it back on.
+- A clip with no kill and no champion gets **no caption** (the `WATCH THIS` fallback is gone).
+- The watermark moved slightly lower (`y=77%`) so it never collides with the pills.
+- **To re-render queued clips with the new look**, delete `data/converted/` (it is a cache;
+  clips re-render on their next publish).
+
+### Fixed — the test suite runs on a fresh clone
+- `pytest` needed a filled-in `.env` (two modules loaded settings at import). An autouse fixture
+  now supplies dummy secrets, ignores the real `.env`, and sandboxes `PROJECT_ROOT`, so tests
+  never touch real credentials or write into `data/`.
+
 ## 2026-07-18
 
 ### Fixed — the posting-time experiment was learning from poisoned data

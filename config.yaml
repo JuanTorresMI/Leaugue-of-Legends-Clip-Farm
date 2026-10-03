@@ -59,14 +59,16 @@ editing:
   # who never open the description. Empty string ("") disables it. Set your real handle in
   # config.local.yaml (gitignored) so it stays out of the repo:  editing: {watermark_text: "@you"}
   watermark_text: ""
-  # Subscribe ask flashed over the final seconds of every clip, right after the payoff --
-  # the only moment a Shorts viewer will ever act on it. Empty string ("") disables it.
-  subscribe_cta_text: "SUBSCRIBE FOR MORE"
+  # Subscribe ask over the final seconds of every clip, right after the payoff -- the only
+  # moment a Shorts viewer will ever act on it. Rendered as a small lower-third pill in the
+  # casing you type here (mixed case reads like a creator; ALL CAPS reads like a banner ad).
+  # Empty string ("") disables it.
+  subscribe_cta_text: "Subscribe for more"
   subscribe_cta_seconds: 2.5
-  # Brief like ask flashed mid-clip, near the action's peak. Likes are the one ranking signal
-  # a viewer can give without leaving the video -- and our best-performing clips are exactly
-  # the ones that collected them. Words only (the burned font has no emoji glyphs). "" disables.
-  like_cta_text: "LIKE IF THAT WAS CLEAN"
+  # Optional brief like ask mid-clip, near the action's peak. Off by default: a second text
+  # flash in the middle of the play is the fastest way to make a clip look auto-generated.
+  # Set e.g. "Like if that was clean" to turn it on. Words only (the font has no emoji glyphs).
+  like_cta_text: ""
   like_cta_seconds: 2.0
 
 youtube:
@@ -82,11 +84,13 @@ youtube:
   # until then uploads still work and the comment is skipped. Each upload picks one
   # (deterministically) so the channel never posts the same sentence several times a day.
   # Empty list + empty auto_comment_text disables the feature.
+  # Written the way a creator actually comments: lowercase, short, a real question, no
+  # "new clips every day!!" sales pitch -- that line is what makes a comment read as a bot.
   auto_comment_texts:
-    - "Which champ should I clip next? 👇 New clips every day!"
-    - "Rate this play 1-10 👇"
-    - "Clean or lucky? You decide 👇"
-    - "What's your main? Drop it below 👇"
+    - "which champ do you want to see more of?"
+    - "clean or did they just int? be honest"
+    - "what rank is everyone here? curious who's watching"
+    - "any tips for this matchup? still learning it"
 
 facebook:
   enabled: false

@@ -3,6 +3,7 @@ from datetime import datetime
 from clipfarm.jobs.models import ClipHighlight, MatchContext
 from clipfarm.riot.champion_names import display_name, tag_name
 from clipfarm.riot.metadata_builder import (
+    TITLE_FAMILIES,
     YOUTUBE_TAGS_CHAR_BUDGET,
     YOUTUBE_TITLE_LIMIT,
     build_clip_metadata,
@@ -46,7 +47,7 @@ def test_clip_pentakill_title():
 
     assert "PENTAKILL" in meta.title
     assert "Jarvan IV" in meta.title  # display name, not internal name
-    assert "#shorts" in meta.title.lower()
+    assert "#shorts" not in meta.title.lower()  # YouTube detects the format; the tag just looks spammy
     assert "Emerald" in meta.title
     assert len(meta.title) <= YOUTUBE_TITLE_LIMIT
     assert "#Pentakill" in meta.hashtags
@@ -57,9 +58,18 @@ def test_clip_double_kill_names_victims():
     highlight = ClipHighlight(kill_streak=2, champion="JarvanIV", victim_champions=["MissFortune", "Leona"])
     meta = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II")
 
-    assert "DOUBLE KILL" in meta.title
-    assert "Miss Fortune" in meta.title  # victim display name
+    assert "Miss Fortune" in meta.description  # victim display name, in the searchable sentence
     assert "#DoubleKill" in meta.hashtags
+    # Not every shape names the victims (that is the point of variety), but across kill
+    # timestamps the ones that do must use the display name, and all carry the double kill.
+    named = 0
+    for ms in range(0, 30):
+        highlight.first_kill_ms = ms * 31_000
+        title = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II").title
+        assert "double kill" in title.lower() or "Jarvan IV" in title or "Miss Fortune" in title
+        named += "Miss Fortune" in title
+        assert "MissFortune" not in title
+    assert named > 0
 
 
 def test_clip_single_kill_is_deterministic():
@@ -70,6 +80,7 @@ def test_clip_single_kill_is_deterministic():
     assert meta1.title == meta2.title  # regeneration must be stable
     assert "Zed" in meta1.title
     assert "KILL -" not in meta1.title  # no more bland "KILL - Champ" format
+    assert "Jarvan IV" in meta1.title  # the matchup is spelled out: that's what people search
 
 
 def test_clip_no_match_fallback():
@@ -118,22 +129,102 @@ def test_clip_metadata_has_cta_and_reach_hashtags():
     highlight = ClipHighlight(kill_streak=5, champion="JarvanIV", victim_champions=["A", "B", "C", "D", "E"])
     meta = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II")
 
-    assert "SUBSCRIBE" in meta.description  # monetization CTA present
-    assert "#Shorts" == meta.hashtags[0]     # Shorts format signal leads
-    assert "#Gaming" in meta.hashtags        # broad-reach tag included
+    assert "subscribe" in meta.description.lower()  # one plain subscribe line, not a shouted banner
+    assert "SUBSCRIBE" not in meta.description
+    # YouTube shows the first three hashtags above the title: champion + game, not "#Shorts".
+    assert meta.hashtags[:2] == ["#JarvanIV", "#LeagueOfLegends"]
+    assert "#Shorts" in meta.hashtags        # format signal still present, just not the headline
+    assert "#Gaming" not in meta.hashtags    # too broad to help; reads as filler
+    assert 3 <= len(meta.hashtags) <= 5
     assert "jarvan iv montage" in meta.tags  # SEO long-tail search phrase
 
 
 def test_full_game_metadata_has_cta():
     meta = build_full_game_metadata(_match(), RECORDED_AT, rank="Emerald II")
-    assert "SUBSCRIBE" in meta.description
+    assert "Subscribe" in meta.description
     assert len(meta.title) <= YOUTUBE_TITLE_LIMIT
 
 
 def test_no_match_clip_still_shorts_and_cta():
     meta = build_clip_metadata(None, None, RECORDED_AT)
-    assert "#shorts" in meta.title.lower()
-    assert "SUBSCRIBE" in meta.description
+    assert "#shorts" not in meta.title.lower()
+    assert "#Shorts" in meta.hashtags
+    assert "Subscribe" in meta.description
+
+
+def _all_titles():
+    """Every title shape the builder can produce, across variants and streak sizes."""
+    titles = [build_full_game_metadata(_match(), RECORDED_AT, rank="Emerald II").title,
+              build_full_game_metadata(_match(win=False), RECORDED_AT).title,
+              build_clip_metadata(_match(), None, RECORDED_AT, rank="Emerald II").title,
+              build_clip_metadata(None, None, RECORDED_AT).title]
+    for streak in (1, 2, 3, 4, 5):
+        for ms in range(0, 12):
+            highlight = ClipHighlight(kill_streak=streak, champion="JarvanIV",
+                                      victim_champions=["Zed", "Ahri", "Lux", "Jinx", "Lulu"][:streak],
+                                      first_kill_ms=ms * 31_000)
+            titles.append(build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II").title)
+    return titles
+
+
+def test_titles_read_like_a_person_wrote_them():
+    # The tells of a generated title: a #shorts suffix, em dashes, emoji pile-ups, SHOUTED
+    # hype adjectives. None of them may appear in any shape the builder produces.
+    emoji = set("⚔🔥😳😱💀👉")  # base code points (the swords carry a variation selector)
+    for title in _all_titles():
+        assert "#" not in title, title
+        assert "—" not in title and "--" not in title, title
+        assert sum(ch in emoji for ch in title) <= 1, title
+        for shout in ("INSANE", "DISGUSTING", "UNREAL", "CRAZY"):
+            assert shout not in title, title
+
+
+def test_kill_clip_titles_vary_in_shape_not_just_words():
+    # Three hook styles must produce genuinely different sentence shapes, so a day's uploads
+    # don't read as one template with the champion swapped in.
+    highlight = ClipHighlight(kill_streak=3, champion="JarvanIV", victim_champions=["Zed", "Ahri", "Lux"])
+    shapes = set()
+    for ms in range(0, 30):
+        highlight.first_kill_ms = ms * 31_000
+        shapes.add(build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II").title)
+    assert len(shapes) >= 8  # a pool, not three templates
+    assert any(t.startswith("Jarvan IV") for t in shapes)   # champion-first (search)
+    assert any(t.startswith(("How", "Why", "This is")) for t in shapes)  # lesson framing
+    assert any("?" in t for t in shapes)  # the question family invites a comment
+
+
+def test_solo_kill_lesson_variant_is_the_matchup_search_phrase():
+    # Across kill timestamps the "why" variant must surface, and it should be the literal
+    # "X as Y" matchup query -- the single best search phrase a solo-kill clip can own.
+    found = False
+    for second in range(0, 40):
+        highlight = ClipHighlight(kill_streak=1, champion="JarvanIV", victim_champions=["Zed"])
+        meta = build_clip_metadata(_match(), highlight, RECORDED_AT.replace(second=second), rank=None)
+        if meta.title.startswith("How to punish Zed as Jarvan IV"):
+            assert meta.title_variant == "why"
+            found = True
+    assert found
+    assert "jarvan iv vs zed" in meta.tags  # the matchup is also a search tag
+
+
+def test_rank_role_context_is_dropped_before_the_hook_is_truncated():
+    # A long hook keeps its meaning; the "| Emerald Jungle" suffix is what gives way.
+    highlight = ClipHighlight(kill_streak=4, champion="AurelionSol",
+                              victim_champions=["MissFortune", "TahmKench", "Lux", "Zed"], first_kill_ms=0)
+    meta = build_clip_metadata(_match(champion="AurelionSol", role="Support"), highlight, RECORDED_AT,
+                               rank="Grandmaster")
+    assert len(meta.title) <= 80 or "|" not in meta.title
+    assert "…" not in meta.title
+
+
+def test_description_leads_with_the_searchable_sentence():
+    highlight = ClipHighlight(kill_streak=2, champion="JarvanIV", victim_champions=["MissFortune", "Leona"])
+    meta = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II")
+    first_line = meta.description.splitlines()[0]
+    assert first_line.startswith("Jarvan IV double kill on Miss Fortune & Leona in Ranked Solo/Duo")
+    assert "Emerald II" in first_line and "patch 26.13" in first_line
+    assert "👉" not in meta.description and "--" not in meta.description
+    assert meta.description.rstrip().endswith(" ".join(meta.hashtags))
 
 
 def test_tags_respect_budget_and_dedupe():
@@ -155,10 +246,10 @@ def test_title_variants_rotate_and_are_recorded():
             first_kill_ms=ms * 31_000,
         )
         meta = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II")
-        assert meta.title_variant in ("hype", "wait", "why")
+        assert meta.title_variant in TITLE_FAMILIES
         seen.add(meta.title_variant)
         assert len(meta.title) <= YOUTUBE_TITLE_LIMIT
-    assert seen == {"hype", "wait", "why"}
+    assert seen == set(TITLE_FAMILIES)
 
 
 def test_title_variant_is_deterministic_per_kill():
@@ -175,3 +266,58 @@ def test_no_variant_without_a_kill():
     assert build_clip_metadata(_match(), None, RECORDED_AT).title_variant is None
     assert build_clip_metadata(None, None, RECORDED_AT).title_variant is None
     assert build_full_game_metadata(_match(), RECORDED_AT).title_variant is None
+
+
+def test_same_champion_clips_get_different_titles():
+    # The repost problem: two clips of one champion in a row must not read as one template
+    # with the victim swapped. Over a handful of consecutive kills, titles must all differ and
+    # span several sentence shapes.
+    titles = []
+    for ms in range(0, 8):
+        highlight = ClipHighlight(kill_streak=1, champion="JarvanIV", victim_champions=["Zed"],
+                                  first_kill_ms=ms * 97_000)
+        titles.append(build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II").title)
+    assert len(set(titles)) >= len(titles) - 1  # seeded rolls can collide once in a while
+    stems = {t.split()[0] for t in titles}
+    assert len(stems) >= 3  # they don't all start the same way
+
+
+def test_alternates_cover_every_family_and_include_the_chosen_title():
+    highlight = ClipHighlight(kill_streak=3, champion="JarvanIV", victim_champions=["Zed", "Ahri", "Lux"],
+                              first_kill_ms=840_000, last_kill_ms=846_000)
+    meta = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II")
+    assert set(meta.title_alternates) == set(TITLE_FAMILIES)
+    assert meta.title_alternates[meta.title_variant] == meta.title
+    assert len(set(meta.title_alternates.values())) == len(TITLE_FAMILIES)  # genuinely different shapes
+    for title in meta.title_alternates.values():
+        assert len(title) <= YOUTUBE_TITLE_LIMIT
+    # No alternates where there is no kill to A/B.
+    assert build_clip_metadata(_match(), None, RECORDED_AT).title_alternates == {}
+
+
+def test_suffix_style_varies_and_respects_the_feed_width():
+    seen = set()
+    for ms in range(0, 40):
+        highlight = ClipHighlight(kill_streak=1, champion="JarvanIV", victim_champions=["Zed"],
+                                  first_kill_ms=ms * 53_000)
+        title = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II").title
+        if "| Emerald Jungle" in title:
+            seen.add("pipe")
+        elif "(Emerald Jungle)" in title:
+            seen.add("paren")
+        elif "Emerald" not in title:
+            seen.add("none")
+        assert len(title) <= 80 or "Emerald Jungle" not in title
+    assert seen == {"pipe", "paren", "none"}
+
+
+def test_description_lines_vary_but_always_carry_the_ask():
+    abouts, ctas = set(), set()
+    for ms in range(0, 30):
+        highlight = ClipHighlight(kill_streak=2, champion="JarvanIV", victim_champions=["Zed", "Ahri"],
+                                  first_kill_ms=ms * 41_000)
+        lines = build_clip_metadata(_match(), highlight, RECORDED_AT, rank="Emerald II").description.splitlines()
+        abouts.add(lines[1])
+        ctas.add(lines[2])
+        assert "subscribe" in lines[2].lower()
+    assert len(abouts) >= 3 and len(ctas) >= 3

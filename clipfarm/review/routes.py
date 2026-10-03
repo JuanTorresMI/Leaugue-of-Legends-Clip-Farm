@@ -174,6 +174,7 @@ def _autopost_payload(s) -> dict:
         "explore_window": s.explore_window,
         "min_kill_streak": s.min_kill_streak,
         "per_game_cap": s.per_game_cap,
+        "vary_consecutive": s.vary_consecutive,
         # Where auto-posts actually go: every enabled platform (not a stale hand-kept list).
         "platforms": enabled_targets("clip"),
         "full_game_enabled": s.full_game_enabled,
@@ -189,6 +190,7 @@ class AutopostRequest(BaseModel):
     explore_window: list[int] | None = None
     min_kill_streak: int | None = None
     per_game_cap: int | None = None
+    vary_consecutive: bool | None = None
     platforms: list[str] | None = None
     full_game_enabled: bool | None = None
     full_game_hours: list[int] | None = None

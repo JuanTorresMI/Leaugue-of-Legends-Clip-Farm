@@ -134,6 +134,8 @@ _MIGRATION_COLUMNS = [
     ("media_files", "published_at", "TEXT"),        # first successful publish time (best-time analysis)
     ("media_files", "title_variant", "TEXT"),       # which A/B title style the draft used (CTR experiment)
     ("media_files", "claim_checked_account", "TEXT"),  # last account we tried to claim this row for (see claim sweep)
+    ("media_files", "victim_champions", "TEXT"),      # JSON list: who a clip's kill(s) were on (thumbnail + titles)
+    ("media_files", "draft_title_alternates", "TEXT"),  # JSON {family: title}: other title shapes for this clip
     ("autopost_log", "kind", "TEXT DEFAULT 'clip'"),  # separate clip vs full-game cadence tracks
     ("publish_targets", "retry_count", "INTEGER DEFAULT 0"),  # failed attempts so far (caps auto-retries)
 ]
@@ -185,6 +187,11 @@ def update_media_file(conn: sqlite3.Connection, media_file_id: int, **fields: An
         fields["draft_hashtags"] = json.dumps(fields.pop("hashtags"))
     if "tags" in fields:
         fields["draft_tags"] = json.dumps(fields.pop("tags"))
+    if "title_alternates" in fields:
+        alternates = fields.pop("title_alternates")
+        fields["draft_title_alternates"] = json.dumps(alternates) if alternates else None
+    if "victim_champions" in fields and isinstance(fields["victim_champions"], list):
+        fields["victim_champions"] = json.dumps(fields["victim_champions"])
     set_clause = ", ".join(f"{k} = ?" for k in fields)
     set_clause += ", updated_at = datetime('now')"
     conn.execute(f"UPDATE media_files SET {set_clause} WHERE id = ?", (*fields.values(), media_file_id))
@@ -457,6 +464,23 @@ def autopost_count_for_match(
         (platform, kind, match_id),
     ).fetchone()
     return row["n"] if row else 0
+
+
+def recent_autoposts(conn: sqlite3.Connection, platform: str, kind: str = "clip", limit: int = 3) -> list[sqlite3.Row]:
+    """The last few items this track fired, newest first, with what they looked like (champion,
+    title family, title). The scheduler uses this to avoid posting the same champion or the
+    same title shape back to back, which reads as reposting to both viewers and YouTube."""
+    return conn.execute(
+        """
+        SELECT m.id, m.champion, m.title_variant, m.draft_title, a.created_at
+        FROM autopost_log a
+        JOIN media_files m ON m.id = a.media_file_id
+        WHERE a.platform = ? AND a.kind = ?
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT ?
+        """,
+        (platform, kind, limit),
+    ).fetchall()
 
 
 def autopost_last_fired(conn: sqlite3.Connection, platform: str, kind: str = "clip") -> str | None:

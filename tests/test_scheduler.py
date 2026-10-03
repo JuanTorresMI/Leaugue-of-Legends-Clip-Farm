@@ -44,11 +44,13 @@ def _use_settings(monkeypatch, **overrides):
     return s
 
 
-def _seed_clip(conn, *, match="NA1_1", streak=1, recorded="2026-07-04T20:00:00", status="ready", account="Me#NA1"):
-    mid = db.insert_media_file(conn, f"C:/clips/{match}_{streak}_{recorded}.mp4", "clip", recorded)
+def _seed_clip(conn, *, match="NA1_1", streak=1, recorded="2026-07-04T20:00:00", status="ready", account="Me#NA1",
+               champion="JarvanIV", title=None, variant=None, alternates=None):
+    mid = db.insert_media_file(conn, f"C:/clips/{match}_{streak}_{recorded}_{champion}.mp4", "clip", recorded)
     db.update_media_file(
         conn, mid, riot_match_id=match, kill_streak=streak, account=account,
-        status=status, champion="JarvanIV", draft_title=f"clip {streak}", draft_description="d",
+        status=status, champion=champion, draft_title=title or f"clip {streak}", draft_description="d",
+        title_variant=variant, title_alternates=alternates,
     )
     return mid
 
@@ -259,3 +261,89 @@ def test_failed_publish_increments_retry_count(temp_db, monkeypatch):
         ).fetchone()
     assert row["status"] == "failed"
     assert row["retry_count"] == 1
+
+
+# --- consecutive-post variety: don't post the same champion / title shape back to back -------
+
+def _fire(conn, mid):
+    db.update_media_file(conn, mid, status="approved")
+    db.record_autopost(conn, mid, "youtube", "clip")
+
+
+def test_prefers_a_different_champion_than_the_last_post(temp_db, monkeypatch):
+    s = _use_settings(monkeypatch)
+    with db.get_conn() as conn:
+        last = _seed_clip(conn, match="NA1_0", streak=3, champion="Yunara")
+        _fire(conn, last)
+        same = _seed_clip(conn, match="NA1_1", streak=3, champion="Yunara", recorded="2026-07-04T21:00:00")
+        other = _seed_clip(conn, match="NA1_2", streak=2, champion="Draven")
+        assert scheduler._pick_next(conn, s, "Me#NA1", "youtube")["id"] == other  # a weaker clip, different champ
+        _ = same
+
+
+def test_same_champion_penta_still_beats_a_solo_kill_of_another(temp_db, monkeypatch):
+    s = _use_settings(monkeypatch)
+    with db.get_conn() as conn:
+        _fire(conn, _seed_clip(conn, match="NA1_0", streak=3, champion="Yunara"))
+        penta = _seed_clip(conn, match="NA1_1", streak=5, champion="Yunara", recorded="2026-07-04T21:00:00")
+        _seed_clip(conn, match="NA1_2", streak=1, champion="Draven")
+        assert scheduler._pick_next(conn, s, "Me#NA1", "youtube")["id"] == penta
+
+
+def test_vary_consecutive_off_restores_pure_value_ranking(temp_db, monkeypatch):
+    s = _use_settings(monkeypatch, vary_consecutive=False)
+    with db.get_conn() as conn:
+        _fire(conn, _seed_clip(conn, match="NA1_0", streak=3, champion="Yunara"))
+        same = _seed_clip(conn, match="NA1_1", streak=3, champion="Yunara", recorded="2026-07-04T21:00:00")
+        _seed_clip(conn, match="NA1_2", streak=2, champion="Draven")
+        assert scheduler._pick_next(conn, s, "Me#NA1", "youtube")["id"] == same
+
+
+def test_title_shape_is_switched_when_the_last_post_used_the_same_one(temp_db, publish_calls, monkeypatch):
+    _use_settings(monkeypatch, min_gap_minutes=0, post_hours=[0, 1])
+    alts = {"hype": "Yunara Triple Kill vs Zed", "wait": "Wait for the triple kill… Yunara",
+            "why": "This is why you don't fight Yunara", "question": "Rate this Yunara triple kill"}
+    with db.get_conn() as conn:
+        _fire(conn, _seed_clip(conn, match="NA1_0", streak=3, champion="Yunara", variant="hype",
+                               title="Yunara Triple Kill vs Lux"))
+        nxt = _seed_clip(conn, match="NA1_1", streak=3, champion="Yunara", recorded="2026-07-04T21:00:00",
+                         title=alts["hype"], variant="hype", alternates=alts)
+    assert scheduler.run_once(_today_at(12)) == nxt
+    with db.get_conn() as conn:
+        row = db.get_media_file(conn, nxt)
+    assert row["title_variant"] == "wait" and row["draft_title"] == alts["wait"]
+
+
+def test_hand_edited_title_is_never_swapped(temp_db, publish_calls, monkeypatch):
+    _use_settings(monkeypatch, min_gap_minutes=0, post_hours=[0, 1])
+    alts = {"hype": "Yunara Triple Kill vs Zed", "wait": "Wait for the triple kill… Yunara"}
+    with db.get_conn() as conn:
+        _fire(conn, _seed_clip(conn, match="NA1_0", streak=3, champion="Yunara", variant="hype"))
+        nxt = _seed_clip(conn, match="NA1_1", streak=3, champion="Yunara", recorded="2026-07-04T21:00:00",
+                         title="my own title", variant="hype", alternates=alts)
+    assert scheduler.run_once(_today_at(12)) == nxt
+    with db.get_conn() as conn:
+        row = db.get_media_file(conn, nxt)
+    assert row["draft_title"] == "my own title" and row["title_variant"] == "hype"
+
+
+def test_different_shape_than_last_post_is_left_alone(temp_db, publish_calls, monkeypatch):
+    _use_settings(monkeypatch, min_gap_minutes=0, post_hours=[0, 1])
+    alts = {"hype": "Yunara Triple Kill vs Zed", "wait": "Wait for the triple kill… Yunara"}
+    with db.get_conn() as conn:
+        _fire(conn, _seed_clip(conn, match="NA1_0", streak=3, champion="Yunara", variant="why"))
+        nxt = _seed_clip(conn, match="NA1_1", streak=3, champion="Yunara", recorded="2026-07-04T21:00:00",
+                         title=alts["hype"], variant="hype", alternates=alts)
+    assert scheduler.run_once(_today_at(12)) == nxt
+    with db.get_conn() as conn:
+        assert db.get_media_file(conn, nxt)["title_variant"] == "hype"
+
+
+def test_recent_autoposts_newest_first(temp_db):
+    with db.get_conn() as conn:
+        a = _seed_clip(conn, match="NA1_0", champion="Yunara")
+        b = _seed_clip(conn, match="NA1_1", champion="Draven", recorded="2026-07-04T21:00:00")
+        _fire(conn, a)
+        _fire(conn, b)
+        recent = db.recent_autoposts(conn, "youtube", "clip", limit=2)
+    assert [r["champion"] for r in recent] == ["Draven", "Yunara"]
