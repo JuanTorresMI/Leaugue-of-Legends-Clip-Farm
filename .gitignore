@@ -14,3 +14,24 @@ tiktok_token.json
 riot_key.txt
 music/*
 !music/README.md
+
+# --- Safety net for a public/cloud repo: never commit secrets, local state, or media ---
+.env.*
+!.env.example
+*token*.json
+*secret*.json
+*.pem
+*.key
+*.sqlite3
+*.db
+*.log
+logs/
+# Recordings and renders (large, and full of other players' games)
+*.mp4
+*.mov
+*.mkv
+# Per-machine editor / Claude Code settings (launch.json is shared on purpose)
+.claude/*
+!.claude/launch.json
+.vscode/
+.idea/

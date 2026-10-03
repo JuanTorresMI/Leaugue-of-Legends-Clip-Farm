@@ -159,8 +159,10 @@ def _load_yaml() -> dict:
 
 
 def _resolve(path: Path) -> Path:
-    """Relative paths in config.yaml are anchored to the project root, not the process's cwd,
+    """`~` expands to the user's home folder (so config.yaml carries no machine-specific
+    username), and relative paths are anchored to the project root, not the process's cwd,
     so `clipfarm.cli` behaves the same regardless of where it's launched from."""
+    path = path.expanduser()
     return path if path.is_absolute() else (PROJECT_ROOT / path)
 
 
@@ -173,9 +175,13 @@ def get_settings() -> Settings:
     logging_cfg.path = _resolve(logging_cfg.path)
     editing = EditingConfig(**raw.get("editing", {}))
     editing.music_dir = _resolve(editing.music_dir)
+    ascent = AscentConfig(**raw["ascent"])
+    ascent.full_games_dir = _resolve(ascent.full_games_dir)
+    ascent.clips_dir = _resolve(ascent.clips_dir)
+    ascent.ffmpeg_path = _resolve(ascent.ffmpeg_path)
 
     return Settings(
-        ascent=AscentConfig(**raw["ascent"]),
+        ascent=ascent,
         watcher=WatcherConfig(**raw.get("watcher", {})),
         riot=RiotConfig(**raw.get("riot", {})),
         thumbnails=ThumbnailConfig(**raw.get("thumbnails", {})),

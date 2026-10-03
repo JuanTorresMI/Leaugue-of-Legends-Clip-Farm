@@ -1,6 +1,7 @@
 # User-editable settings. Secrets live in .env instead.
 
 ascent:
+  # "~" = your Windows user folder, so this works on any machine with Ascent's default layout.
   full_games_dir: "~/Videos/Ascent"
   clips_dir: "~/Videos/Ascent/Clips"
   ffmpeg_path: "C:/Program Files/Ascent/ffmpeg.exe"

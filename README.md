@@ -218,9 +218,25 @@ If the font or CDN is unavailable, thumbnail generation degrades gracefully to a
      `RIOT_GAME_NAME=Faker`, `RIOT_TAG_LINE=KR1`. This just *seeds* the account store on first run;
      after that, switch accounts from the dashboard dropdown or `set-account` (see below) — no need
      to edit `.env` again.
-3. Check `config.yaml` — the Ascent folder paths and ffmpeg path already match this machine's
-   install, but review the tunable values under `riot:` (especially `clip_roll_tolerance_seconds`
-   and `multikill_cluster_seconds` — these are best guesses until real clips exist to tune against).
+3. Check `config.yaml` — the Ascent folder paths (`~/Videos/Ascent`, `~` = your user folder) and
+   ffmpeg path match Ascent's default install, but review the tunable values under `riot:`
+   (especially `clip_roll_tolerance_seconds` and `multikill_cluster_seconds` — these are best
+   guesses until real clips exist to tune against).
+
+### What's in git vs. what stays on your machine
+
+The repo holds code, docs, tests, and `config.yaml` (tunables only — no secrets). Everything
+private or machine-specific is gitignored and **never leaves your PC**:
+
+| Not in git | What it is | On a fresh clone |
+|---|---|---|
+| `.env` | Riot key + account seed, Google/Facebook seeds | copy `.env.example` → `.env`, fill in |
+| `data/` | SQLite DB (queue, publish history, duplicate ledger), YouTube/Facebook tokens, `client_secret.json`, saved Riot key, accounts, auto-post settings, caches | copy the folder over from your main PC (it holds your publish history), or start fresh and run `reauth-youtube` |
+| `music/` tracks | your royalty-free music | copy them over |
+| `.venv/` | Python environment | step 1 above |
+
+`tests/test_repo_hygiene.py` fails the test suite if a secret file or a credential-shaped string
+(Riot key, Facebook/Google token) is ever tracked — run `python -m pytest` before pushing.
 
 ## Running it
 
